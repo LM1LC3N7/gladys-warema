@@ -6,8 +6,8 @@
     "en": "WAREMA blinds, shutters, awnings, lights and scenes, through the WMS WebControl pro. Unofficial.",
     "fr": "Stores, volets, stores bannes, lumières et scènes WAREMA, par la WMS WebControl pro. Non officiel."
   },
-  "version": "0.1.0",
-  "docker_image": "ghcr.io/lm1lc3n7/gladys-warema:0.1.0",
+  "version": "0.1.1",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-warema:0.1.1",
   "gladys_version": ">=5.1.0",
   "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-warema/main/cover.png",
   "categories": ["lighting", "protocols"],

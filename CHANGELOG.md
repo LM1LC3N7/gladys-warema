@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-19
+
 ### Added
 
 - The channels of a WAREMA WMS WebControl pro, offered in the Discovery tab:
@@ -52,4 +54,5 @@ the notes of the version's GitHub Release.
   box (HTTP 429)"; one read back at most per channel and due time; a pause set
   by any path holds the reconnection back.
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-warema/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-warema/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-warema/releases/tag/v0.1.1
