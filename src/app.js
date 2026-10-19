@@ -252,7 +252,20 @@ export class WaremaApp {
     return Math.max(0, this.store.pausedUntil - this.now());
   }
 
+  /** Connects; the promise is kept while it runs (the Test button waits for it). */
   async open(generation) {
+    const opening = this.connectNow(generation);
+    this.opening = opening;
+    try {
+      await opening;
+    } finally {
+      if (this.opening === opening) {
+        this.opening = undefined;
+      }
+    }
+  }
+
+  async connectNow(generation) {
     const left = this.pauseLeft();
     if (left > 0) {
       // A pause set meanwhile by another path: nothing is asked before its end.
@@ -267,7 +280,10 @@ export class WaremaApp {
       if (!this.current(generation)) {
         return;
       }
-      await this.loadInventory(generation);
+      // Offline, no command can wait behind it: the configuration has 5 s.
+      await this.loadInventory(generation, {
+        request: { timeout: TIMINGS.openTimeout, long: true },
+      });
       if (!this.current(generation)) {
         return;
       }
@@ -360,7 +376,16 @@ export class WaremaApp {
     this.reading = true;
     try {
       if (this.now() - this.inventoryAt >= TIMINGS.inventory) {
-        await this.loadInventory(generation);
+        try {
+          await this.loadInventory(generation);
+        } catch (err) {
+          if (err?.kind === 'rate' || err?.kind === 'server') {
+            throw err;
+          }
+          // The periodic reload failed: keep the inventory known, try again
+          // at the next read; the states below tell whether the box is gone.
+          this.logger.warn(`WebControl pro: configuration not read again (${err.message})`);
+        }
       }
       await this.readStates(generation);
     } catch (err) {
@@ -379,8 +404,8 @@ export class WaremaApp {
   }
 
   /** getConfiguration: the channels, rooms and scenes. */
-  async loadInventory(generation, { force = false } = {}) {
-    const json = await this.client.configuration();
+  async loadInventory(generation, { force = false, request } = {}) {
+    const json = await this.client.configuration(request);
     if (!this.current(generation)) {
       return;
     }
@@ -770,8 +795,9 @@ export class WaremaApp {
       } else {
         await client.action(
           call.actions.map((a) => ({ destinationId: destId, ...a })),
-          // Moves Instant (a refusal shows at the read back), the rest Detailed.
-          { ...options.send, instant: Boolean(call.move), stop: Boolean(call.stop) },
+          // Moves and STOPs Instant (a refusal shows at the read back), lights
+          // and loads Detailed.
+          { ...options.send, instant: Boolean(call.move || call.stop), stop: Boolean(call.stop) },
         );
       }
     } catch (err) {
@@ -831,7 +857,8 @@ export class WaremaApp {
    */
   readBack(destId, delay) {
     const generation = this.generation;
-    const key = `${destId}@${this.now() + delay}`;
+    const step = TIMINGS.readBackStep;
+    const key = `${destId}@${Math.round((this.now() + delay) / step) * step}`;
     if (this.readBackKeys.has(key)) {
       return;
     }
@@ -871,6 +898,10 @@ export class WaremaApp {
     if (this.paused()) {
       return T.failure({ kind: 'rate' });
     }
+    if (this.opening) {
+      // A connection is under way: wait for it rather than ask the box twice.
+      await this.opening.catch(() => {});
+    }
     const shared = this.online && this.client ? this.client : undefined;
     const client = shared ?? this.connect({ url: config.url, timers: this.timers, now: this.now });
     const options = shared ? {} : { timeout: TIMINGS.testTimeout, long: true };
@@ -903,9 +934,15 @@ export class WaremaApp {
         client.close?.();
       }
     }
-    if (restart) {
-      this.logger.info('The WebControl pro answers again (Test button): starting again');
-      this.background(this.start(this.raw));
+    if (restart && !this.online && !this.opening && !this.paused()) {
+      // The planned reconnection is brought forward (its timer cleared): one
+      // connection, never two at once.
+      this.logger.info('The WebControl pro answers again (Test button): connecting now');
+      const generation = this.generation;
+      this.timers.clearTimeout(this.timer);
+      this.timer = undefined;
+      this.timerAt = undefined;
+      this.background(this.open(generation));
     }
     return result;
   }

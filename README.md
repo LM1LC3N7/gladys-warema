@@ -27,14 +27,15 @@ Gladys ⇄ SDK ⇄ src/handlers.js ⇄ src/app.js (WaremaApp) ⇄ src/wms.js ⇄
   `{"protocolVersion": "1.0", "command": …, "source": 2, …}`: `ping`,
   `getConfiguration` (destinations, rooms, scenes), `getStatus` (one
   destination at a time), `action` (several actions of a same channel in one
-  request; moves with `responseType` 0, Instant, their refusal seen at the read
-  back; stop, lights and loads with `responseType` 1, Detailed, as Home
-  Assistant) and `sceneActions` (`sceneActionType` 1: run, never relearn). An answer with an `errors` list is a refusal of the box,
+  request; moves and stops with `responseType` 0, Instant, their effect or
+  refusal seen at the read back; lights and loads with `responseType` 1,
+  Detailed, as Home Assistant) and `sceneActions` (`sceneActionType` 1: run, never relearn). An answer with an `errors` list is a refusal of the box,
   reported with its codes as they are.
 - **Radio**: one request at a time: a STOP at the head, then the other
   commands, the reads, the configuration last (it never leaves while a command
-  waits); no request but a STOP holds the line more than 2.5 s (reads time out
-  after 2.5 s), so a STOP always leaves within 3.5 s; status requests at
+  waits); no request holds the line more than 2.5 s (reads time out after
+  2.5 s, the configuration 5 s while connecting), a STOP 1 s, so a STOP always
+  leaves within 3.5 s, even behind another STOP; status requests at
   least 0.5 s apart; a status answered busy (`0x50005`) is asked again after
   1 s, 3 tries at most (as pywmspro). Only the channels added in Gladys are
   read, at the configured interval (30 s by default), the configuration every

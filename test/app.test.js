@@ -274,9 +274,10 @@ test('a 429 pauses everything, kept in /data across a restart; never read faster
   assert.equal(again.online, true);
 
   // A network failure: tried again, never sooner than the read interval.
-  box.failures.set('configuration', new WmsError('network', 'connection reset', { sent: true }));
-  again.inventoryAt = -Infinity;
+  await again.deviceCreated(deviceNamed(gladys, 'Wohnzimmer (Wohnbereich)'));
+  box.failures.set('status', new WmsError('network', 'connection reset', { sent: true }));
   await tick(30_000);
+  assert.equal(again.online, false);
   const pings = box.callsOf('ping').length;
   await tick(29_000);
   assert.equal(box.callsOf('ping').length, pings);
@@ -428,10 +429,10 @@ test('a STOP skips the chain of its channel, and the moves still waiting are dro
   const sent = box.callsOf('action');
   assert.equal(sent.length, 1, 'only the STOP left');
   assert.equal(sent[0].stop, true);
-  assert.equal(sent[0].instant, false, 'a STOP is Detailed');
+  assert.equal(sent[0].instant, true, 'a STOP is Instant (its effect shows at the read back)');
 });
 
-test('moves are sent Instant; stop, lights and loads Detailed (I1)', async (t) => {
+test('moves and STOPs are sent Instant; lights and loads Detailed (I1)', async (t) => {
   const { gladys, box, tick } = await setup(t, {
     config: { ...CONFIG, allow_load_switches: true },
   });
@@ -444,7 +445,7 @@ test('moves are sent Instant; stop, lights and loads Detailed (I1)', async (t) =
   await gladys.fake.setValue(heater, featureOf(heater, 'turn_on'), 1);
   assert.deepEqual(
     box.callsOf('action').map((c) => c.instant),
-    [true, false, false, false],
+    [true, true, false, false],
   );
 });
 
@@ -474,4 +475,61 @@ test('an invalid address is said in the status, nothing is sent', async (t) => {
   assert.equal(gladys.fake.connectionStatus.connected, false);
   assert.equal(gladys.fake.connectionStatus.message.en, T.configError('local-name').en);
   assert.equal(box.calls.length, 0);
+});
+
+test('read backs due within 500 ms of each other are merged', async (t) => {
+  const { gladys, box, tick } = await setup(t, { config: { ...CONFIG, poll_interval: 600 } });
+  const light = await created(gladys, tick, 'Wandlicht (Wohnbereich)');
+  const before = box.callsOf('status').length;
+  await gladys.fake.setValue(light, featureOf(light, 'on'), 1);
+  await tick(100);
+  await gladys.fake.setValue(light, featureOf(light, 'on'), 0);
+  await tick(TIMINGS.lightEchoes[0] + 500);
+  assert.equal(box.callsOf('status').length, before + 1);
+});
+
+test('a periodic reload of the configuration that fails keeps the inventory and the connection', async (t) => {
+  const { gladys, box, app, tick } = await setup(t);
+  await created(gladys, tick, 'Wohnzimmer (Wohnbereich)');
+  const devices = gladys.fake.discoveredDevices.length;
+  box.failures.set('configuration', new WmsError('format', 'not an answer', { sent: true }));
+  app.inventoryAt = -Infinity;
+  await tick(30_000);
+  assert.equal(app.online, true, 'still connected');
+  assert.equal(app.model.counts.offered, OFFERED, 'the inventory known is kept');
+  assert.equal(gladys.fake.discoveredDevices.length, devices);
+  const configs = box.callsOf('configuration').length;
+  await tick(30_000);
+  assert.equal(box.callsOf('configuration').length, configs + 1, 'tried again at the next read');
+});
+
+test('when connecting, getConfiguration has 5 s (no command can wait behind it)', async (t) => {
+  const { box } = await setup(t);
+  assert.deepEqual(
+    box.callsOf('configuration').map((c) => [c.timeout, c.long]),
+    [[TIMINGS.openTimeout, true]],
+  );
+});
+
+test('the Test button offline waits for a connection under way: never two at once', async (t) => {
+  const { gladys, box, app, tick } = await setup(t, {
+    prepare: (b) =>
+      b.failures.set('ping', new WmsError('network', 'connection refused', { sent: false })),
+  });
+  box.failures.delete('ping');
+  let release;
+  box.gates.set('ping', new Promise((resolve) => (release = resolve)));
+  await tick(30_000); // the planned reconnection starts, its ping held
+  assert.ok(app.opening, 'a connection is under way');
+  const clients = box.clients.length;
+  const pending = gladys.fake.action(ACTIONS.TEST, {});
+  await settle();
+  box.gates.delete('ping');
+  release();
+  const ack = await pending;
+  await tick(0);
+  assert.match(ack.data.message.en, /^Connection OK/);
+  assert.equal(box.clients.length, clients, 'no client of its own: the one just connected');
+  assert.equal(app.online, true);
+  assert.equal(box.callsOf('ping').length, 3, 'the first try, the reconnection, the test');
 });

@@ -289,9 +289,9 @@ const feature = (key, language, category, type, { min = 0, max = 1, write, read,
 /** The features of a cover moved by a percentage drive (+ optional slats on open/close). */
 function coverFeatures(category, language, { drive, rotate, stop }) {
   const range = rotate ? rangeOf(rotate) : undefined;
-  // A move is sent Instant (its refusal shows at the read back: cause,
-  // blocking); a STOP is sent Detailed, at the head of the queue, outside the
-  // chain of its channel.
+  // A move and a STOP are sent Instant (their effect, or a refusal, shows at
+  // the read back: cause, blocking); a STOP goes at the head of the queue,
+  // outside the chain of its channel.
   const move = (actions) => ({ actions, move: true });
   const open = () =>
     move(

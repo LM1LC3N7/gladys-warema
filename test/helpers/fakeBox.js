@@ -43,7 +43,14 @@ export function fakeBox() {
       }
       // The moment the request leaves its socket.
       options?.guard?.();
-      box.calls.push({ name, args, instant: options?.instant, stop: options?.stop });
+      box.calls.push({
+        name,
+        args,
+        instant: options?.instant,
+        stop: options?.stop,
+        timeout: options?.timeout,
+        long: options?.long,
+      });
       const failure = box.failures.get(name);
       if (failure) {
         throw typeof failure === 'function' ? failure() : failure;

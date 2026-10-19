@@ -149,8 +149,14 @@ export const TIMINGS = {
    * 2.5 s, so a STOP arriving behind a read still leaves within 3.5 s.
    */
   readTimeout: 2500,
-  /** No request but a STOP holds the line of the box longer than this. */
+  /** No request holds the line of the box longer than this... */
   lineHold: 2500,
+  /** ...and a STOP (sent Instant) this: then "sent, without confirmation". */
+  stopHold: 1000,
+  /** getConfiguration when connecting (no command can wait behind it then). */
+  openTimeout: 5000,
+  /** Read backs due within this step of each other are merged into one. */
+  readBackStep: 500,
   /** One request of the connection test (the button waits 60 s). */
   testTimeout: 10_000,
   /**

@@ -43,7 +43,9 @@ last movement): their direction and range are not checked on a real box yet.
 
 **Stop** always goes first: it never waits behind another command of the same
 product, nor behind a read, and the moves of that product still waiting are
-dropped.
+dropped. A stop is sent without waiting for the detailed answer of the box;
+without an answer within 1 s, it is told "sent, without confirmation" and the
+product is read again.
 
 Window drives, potential-free actuators, load dimmers and the "identify"
 command are not offered yet.

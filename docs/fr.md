@@ -45,7 +45,9 @@ encore vérifiés sur une vraie box.
 
 L'**arrêt** passe toujours en premier : il n'attend jamais derrière une autre
 commande du même produit, ni derrière une lecture, et les mouvements de ce
-produit encore en attente sont abandonnés.
+produit encore en attente sont abandonnés. Un arrêt part sans attendre la
+réponse détaillée de la box ; sans réponse en 1 s, il est annoncé « envoyée,
+sans confirmation » et le produit est relu.
 
 Les moteurs de fenêtre, les actionneurs libres de potentiel, les variateurs de
 charge et la commande « identifier » ne sont pas encore proposés.

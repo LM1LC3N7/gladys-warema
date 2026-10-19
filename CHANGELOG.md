@@ -19,9 +19,13 @@ the notes of the version's GitHub Release.
   switches. Blinds are never switches.
 - A STOP always leaves within 3.5 s: it skips the chain of its channel, goes
   at the head of the queue of the box, and drops the moves of its channel
-  still waiting; no other request holds the line more than 2.5 s.
-- Moves are sent Instant (a refusal shows at the read back: cause, blocking);
-  stop, lights and loads Detailed, as Home Assistant.
+  still waiting; no other request holds the line more than 2.5 s, a STOP 1 s
+  (then "sent, without confirmation"), so two STOPs at once both leave in time.
+- Moves and STOPs are sent Instant (a refusal shows at the read back: cause,
+  blocking); lights and loads Detailed, as Home Assistant.
+- A failed periodic reload of the configuration keeps the inventory known;
+  the configuration has 5 s when connecting; read backs within 500 ms merged;
+  the Test button waits for a connection under way instead of asking twice.
 - The slats of venetian blinds as their own device, with the "Slats of
   venetian blinds as their own device" option (off by default: a "close all
   blinds" of a voice assistant may target it too).

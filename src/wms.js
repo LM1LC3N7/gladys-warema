@@ -285,10 +285,12 @@ export function createClient({
       // A command must not leave once its deadline is past (guard throws).
       guard?.();
       const asked = typeof timeout === 'function' ? timeout() : timeout;
-      // Nothing but a STOP holds the line longer than 2.5 s: a STOP that
-      // arrives behind it still leaves within its 3.5 s (`long`: the test
-      // client of an integration offline, which no command shares).
-      const ms = long || priority === PRIORITY.stop ? asked : Math.min(asked, TIMINGS.lineHold);
+      // No request holds the line longer than 2.5 s, a STOP 1 s: a STOP that
+      // arrives behind any of them (another STOP included) still leaves
+      // within its 3.5 s (`long`: a request no command can wait behind, the
+      // integration being offline).
+      const hold = priority === PRIORITY.stop ? TIMINGS.stopHold : TIMINGS.lineHold;
+      const ms = long ? asked : Math.min(asked, hold);
       const body = JSON.stringify({
         protocolVersion: API.protocolVersion,
         command,

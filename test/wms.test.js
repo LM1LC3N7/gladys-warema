@@ -213,6 +213,7 @@ test('a STOP goes at the head of the queue; the configuration never leaves while
   const scene = client.scene(IDS.sceneNight);
   const stop = client.action([{ destinationId: IDS.awning, actionId: 16, parameters: {} }], {
     stop: true,
+    instant: true,
   });
   await new Promise((resolve) => setTimeout(resolve, 50));
   release();
@@ -221,7 +222,7 @@ test('a STOP goes at the head of the queue; the configuration never leaves while
     sim.requests.map((r) => r.body.command),
     ['ping', 'action', 'sceneActions', 'getStatus', 'getConfiguration'],
   );
-  assert.equal(sim.requests[1].body.responseType, 1, 'a STOP is Detailed');
+  assert.equal(sim.requests[1].body.responseType, 0, 'a STOP is Instant');
 });
 
 test('moves are Instant; nothing but a STOP holds the line more than 2.5 s', async (t) => {
@@ -244,4 +245,20 @@ test('moves are Instant; nothing but a STOP holds the line more than 2.5 s', asy
   const held = Date.now() - t0;
   assert.ok(held >= TIMINGS.lineHold - 100 && held < TIMINGS.lineHold + 500, `${held} ms`);
   assert.equal(TIMINGS.readTimeout, 2500);
+});
+
+test('a STOP holds the line 1 s at most', async (t) => {
+  const { sim, client } = await withBox(t);
+  sim.handlers.set('action', () => true); // never answers
+  const t0 = Date.now();
+  await assert.rejects(
+    client.action([{ destinationId: IDS.awning, actionId: 16, parameters: {} }], {
+      stop: true,
+      instant: true,
+      timeout: 4500,
+    }),
+    (err) => err.kind === 'timeout' && err.sent === true,
+  );
+  const held = Date.now() - t0;
+  assert.ok(held >= TIMINGS.stopHold - 100 && held < TIMINGS.stopHold + 400, `${held} ms`);
 });

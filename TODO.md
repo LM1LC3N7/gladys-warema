@@ -94,10 +94,11 @@ up to date at the end of every milestone.
   docs).
 - **Only the channels added in Gladys are read** (each status goes over the
   WMS radio, 0.5 s apart); a channel is read once when it is added.
-- **Moves with `responseType` 0** (Instant): the box answers at once, and a
-  refusal (wind, rain) shows at the read back (cause, blocking badge). Stop,
-  lights and loads with `responseType` 1 (Detailed, as Home Assistant); scenes
-  with 0. A Detailed answer slower than 2.5 s gives "sent, without
+- **Moves and STOPs with `responseType` 0** (Instant): the box answers at once,
+  and a refusal (wind, rain) shows at the read back (cause, blocking badge).
+  Lights and loads with `responseType` 1 (Detailed, as Home Assistant); scenes
+  with 0. A STOP holds the line 1 s at most (approval round 1, scenario F: two
+  STOPs at once), then "sent, without confirmation" and a read back. A Detailed answer slower than 2.5 s gives "sent, without
   confirmation" and a read back.
 - **STOP first** (review B1): a STOP skips the chain of its channel, goes at
   the head of the queue of the box, and drops the moves of its channel still
@@ -107,7 +108,12 @@ up to date at the end of every milestone.
   3.5 s whatever was in flight.
 - **Test button**: through the client of the integration while it runs (one
   request at a time at the box); a client of its own only offline, closed
-  before the integration starts again.
+  first; a connection under way is awaited, and a success brings the planned
+  reconnection forward (never two at once).
+- **Inventory**: getConfiguration has 5 s when connecting (nothing can wait
+  behind it then), 2.5 s afterwards; a failed periodic reload keeps the known
+  inventory and is tried again at the next read (a 429 or a 5xx still pauses).
+- **Read backs** due within 500 ms of each other are merged.
 - **Pauses**: open() and the reads check the pause before asking anything, so
   a pause set by the Test button or a command holds the reconnection back.
 - **Slat roofs read-only in v1** (review I5): position of the slats and cause
