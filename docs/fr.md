@@ -15,24 +15,37 @@ pas de cloud. Non officiel, sans lien avec WAREMA.
 
 ## Ce que vous obtenez
 
-| Canal WAREMA                   | Dans Gladys                                                                                         |
-| ------------------------------ | --------------------------------------------------------------------------------------------------- |
-| Volet roulant / store          | un volet : ouverture, fermeture, arrêt, position, et la cause de son dernier mouvement              |
-| Store à lamelles               | un volet : ouverture, fermeture, arrêt, position ; les **lamelles** en appareil séparé, sur demande |
-| Store banne                    | un rideau : ouverture, fermeture, arrêt, position ; son **lambrequin** en second rideau             |
-| Toiture à lames (lames seules) | un volet : ouverture, fermeture, arrêt, position des lames                                          |
-| Variateur                      | une lumière : allumage et luminosité (0-100 %)                                                      |
-| Interrupteur de lumière        | une lumière : allumage                                                                              |
-| Charge commutée                | un état en lecture seule et des boutons « Allumer » / « Éteindre », **désactivés par défaut**       |
-| Scène WAREMA                   | un bouton « Lancer » : la scène s'exécute comme depuis l'app WAREMA                                 |
+| Canal WAREMA                   | Dans Gladys                                                                                           |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| Volet roulant / store          | un volet : ouverture, fermeture, arrêt, position, et la cause de son dernier mouvement                |
+| Store à lamelles               | un volet : ouverture, fermeture, arrêt, position ; les **lamelles** en appareil séparé, sur demande   |
+| Store banne                    | un rideau : ouverture (= rentrer), fermeture (= déployer), arrêt, position ; son **lambrequin** aussi |
+| Toiture à lames (lames seules) | un volet, **en lecture seule** pour l'instant : position des lames, cause du dernier mouvement        |
+| Variateur                      | une lumière : allumage et luminosité (0-100 %)                                                        |
+| Interrupteur de lumière        | une lumière : allumage                                                                                |
+| Charge commutée                | un état en lecture seule et des boutons « Allumer » / « Éteindre », **désactivés par défaut**         |
+| Scène WAREMA                   | un bouton « Lancer » : la scène s'exécute comme depuis l'app WAREMA                                   |
 
 Les stores et volets ne sont **jamais** des interrupteurs : une scène « tout
 éteindre » ne les ferme pas. La position suit la convention de Gladys : 100 %
 = ouvert, 0 % = fermé (WAREMA compte à l'envers : 0 % ouvert, 100 % fermé).
 Ouvrir ou fermer complètement un store à lamelles ouvre ou ferme aussi ses
-lamelles, comme l'app WAREMA. Pour un store banne, « ouvrir » correspond à ce
-que la WebControl pro appelle 0 %, comme dans Home Assistant : vérifiez-le
-chez vous, et dites-nous si c'est l'inverse.
+lamelles, comme l'app WAREMA.
+
+**Stores bannes : Ouvrir = rentrer le store banne** (0 % pour WAREMA, comme
+dans Home Assistant), Fermer = le déployer ; position 100 % = rentré. Gladys
+n'a pas de type « store banne » : les stores bannes et leur lambrequin sont
+des **rideaux**. Attention : un « ferme les rideaux » d'une scène, de Google,
+d'Alexa, de HomeKit ou d'un assistant (MCP) **déploie les stores bannes**.
+Vérifiez le sens chez vous, et dites-nous si c'est l'inverse.
+
+Les **toitures à lames** sont en lecture seule pour l'instant (position des
+lames et cause du dernier mouvement) : leur sens et leur plage ne sont pas
+encore vérifiés sur une vraie box.
+
+L'**arrêt** passe toujours en premier : il n'attend jamais derrière une autre
+commande du même produit, ni derrière une lecture, et les mouvements de ce
+produit encore en attente sont abandonnés.
 
 Les moteurs de fenêtre, les actionneurs libres de potentiel, les variateurs de
 charge et la commande « identifier » ne sont pas encore proposés.
@@ -79,7 +92,9 @@ de confiance.
   commutée pilote souvent un chauffage de terrasse. Tant que l'option est
   désactivée, ses boutons sont refusés, et l'option est relue juste avant
   chaque envoi. Ce sont des boutons, jamais un interrupteur : un « tout
-  éteindre » ne les atteint pas.
+  éteindre » ne les atteint pas. **Une scène WAREMA s'exécute telle quelle**,
+  même si elle contient une charge commutée (chauffage) ou une fenêtre : cette
+  option ne la bloque pas.
 - **Lamelles des stores en appareil séparé** (désactivé par défaut) : chaque
   store à lamelles propose aussi un appareil « <store> – Lamelles » (0-100 %).
   Attention : un « fermer tous les stores » de Google, Alexa, HomeKit ou d'un

@@ -8,7 +8,9 @@
 // The box answers HTTP 200 with a JSON body; a body with an `errors` list is a
 // refusal of the box (its codes are reported as they are).
 //
-// One request at a time (pywmspro's common lock), commands before reads; two
+// One request at a time (pywmspro's common lock): a STOP first, then the other
+// commands, then the reads, the configuration last; no request but a STOP
+// holds the line more than 2.5 s, so a STOP leaves within its 3.5 s; two
 // status requests at least 0.5 s apart (they go over the WMS radio channel); a
 // status answered "busy" (0x50005) is asked again after 1 s, 3 tries at most.
 // Redirections are never followed.
@@ -24,9 +26,11 @@ export class WmsError extends Error {
    * @param {{ status?: number, retryAfter?: number, sent?: boolean, codes?: string[] }} [details]
    *   retryAfter in ms; sent false when the request never left (connection
    *   refused, no route, timed out before the connection); codes: the error
-   *   codes of the box, as hexadecimal texts
+   *   codes of the box, as hexadecimal texts; netCode: the socket error code
+   *   (ECONNREFUSED...); seconds: the timeout of a request without answer.
+   *   The message is English (logs); src/i18n.js reasonOf() translates.
    */
-  constructor(kind, message, { status, retryAfter, sent, codes } = {}) {
+  constructor(kind, message, { status, retryAfter, sent, codes, netCode, seconds } = {}) {
     super(message);
     this.name = 'WmsError';
     this.kind = kind;
@@ -34,6 +38,8 @@ export class WmsError extends Error {
     this.retryAfter = retryAfter;
     this.sent = sent;
     this.codes = codes;
+    this.netCode = netCode;
+    this.seconds = seconds;
   }
 }
 
@@ -53,8 +59,10 @@ export function networkError(err, sent) {
   if (err instanceof WmsError || err?.refusal) {
     return err;
   }
-  const reason = NETWORK_REASONS[err?.code] ?? 'network error';
-  return new WmsError('network', reason, { sent });
+  const netCode =
+    typeof err?.code === 'string' && err.code in NETWORK_REASONS ? err.code : undefined;
+  const reason = netCode ? NETWORK_REASONS[netCode] : 'network error';
+  return new WmsError('network', reason, { sent, netCode });
 }
 
 /** Retry-After (seconds or an HTTP date) -> ms, or undefined. */
@@ -190,7 +198,7 @@ export function httpRequest(
     });
     timer = setTimeout(() => {
       const seconds = Math.max(1, Math.round(timeout / 1000));
-      settle(reject, new WmsError('timeout', `no answer within ${seconds} s`, { sent }));
+      settle(reject, new WmsError('timeout', `no answer within ${seconds} s`, { sent, seconds }));
       req.destroy();
     }, timeout);
     req.on('error', (err) => settle(reject, networkError(err, sent)));
@@ -217,8 +225,12 @@ export function httpRequest(
   });
 }
 
-/** Priorities of the queue: commands first. */
-const PRIORITY = { command: 0, read: 1 };
+/**
+ * Priorities of the queue: a STOP at the head (it must leave within 3.5 s
+ * whatever waits), then the other commands, then the reads; the
+ * configuration last, so it never leaves while a command waits.
+ */
+const PRIORITY = { stop: 0, command: 1, read: 2, bulk: 3 };
 
 /**
  * A client of one WebControl pro.
@@ -269,10 +281,14 @@ export function createClient({
 
   const send = (command, parameters, options = {}, priority = PRIORITY.read) =>
     enqueue(priority, async () => {
-      const { timeout = TIMINGS.requestTimeout, guard, maxBytes } = options;
+      const { timeout = TIMINGS.readTimeout, guard, maxBytes, long = false } = options;
       // A command must not leave once its deadline is past (guard throws).
       guard?.();
-      const ms = typeof timeout === 'function' ? timeout() : timeout;
+      const asked = typeof timeout === 'function' ? timeout() : timeout;
+      // Nothing but a STOP holds the line longer than 2.5 s: a STOP that
+      // arrives behind it still leaves within its 3.5 s (`long`: the test
+      // client of an integration offline, which no command shares).
+      const ms = long || priority === PRIORITY.stop ? asked : Math.min(asked, TIMINGS.lineHold);
       const body = JSON.stringify({
         protocolVersion: API.protocolVersion,
         command,
@@ -338,6 +354,7 @@ export function createClient({
         API.commands.configuration,
         {},
         { maxBytes: LIMITS.configurationBytes, ...options },
+        PRIORITY.bulk,
       );
     },
     /** The status of ONE destination (the API reads one at a time). */
@@ -357,15 +374,21 @@ export function createClient({
     },
     /**
      * The actions of ONE destination (the box accepts several actions of a
-     * same channel in one request).
+     * same channel in one request). `instant`: answered on reception (the
+     * moves, whose refusal shows at the read back); otherwise Detailed (stop,
+     * lights, loads, as Home Assistant). `stop`: at the head of the queue.
      * @param {{ destinationId: number, actionId: number, parameters: object }[]} actions
+     * @param {{ instant?: boolean, stop?: boolean, timeout?: number|Function, guard?: Function }} [options]
      */
-    action(actions, options) {
+    action(actions, { instant = false, stop = false, ...options } = {}) {
       return send(
         API.commands.action,
-        { responseType: RESPONSE_TYPE.DETAILED, actions },
+        {
+          responseType: instant ? RESPONSE_TYPE.INSTANT : RESPONSE_TYPE.DETAILED,
+          actions,
+        },
         options,
-        PRIORITY.command,
+        stop ? PRIORITY.stop : PRIORITY.command,
       );
     },
     /** Runs a scene of the box (never relearns it). */

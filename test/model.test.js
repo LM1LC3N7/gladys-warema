@@ -71,17 +71,22 @@ test('the writes: position, open, close and stop of each cover', () => {
   const m = model({ publishTilt: true });
   const write = (id, value) => m.writers.get(id).write(value);
   const shutter = `ext:test:dest:${F.IDS.shutter}`;
+  // Moves are flagged `move` (sent Instant), the STOP `stop` (head of the queue).
   assert.deepEqual(write(`${shutter}:state`, COVER_STATE.OPEN), {
     actions: [{ actionId: 0, parameters: { percentage: 0 } }],
+    move: true,
   });
   assert.deepEqual(write(`${shutter}:state`, COVER_STATE.CLOSE), {
     actions: [{ actionId: 0, parameters: { percentage: 100 } }],
+    move: true,
   });
   assert.deepEqual(write(`${shutter}:state`, COVER_STATE.STOP), {
     actions: [{ actionId: 16, parameters: {} }],
+    stop: true,
   });
   assert.deepEqual(write(`${shutter}:position`, 70), {
     actions: [{ actionId: 0, parameters: { percentage: 30 } }],
+    move: true,
   });
   // A venetian blind fully opened or closed moves its slats too.
   const blind = `ext:test:dest:${F.IDS.blind}`;
@@ -90,25 +95,38 @@ test('the writes: position, open, close and stop of each cover', () => {
       { actionId: 0, parameters: { percentage: 0 } },
       { actionId: 6, parameters: { rotation: -127 } },
     ],
+    move: true,
   });
   assert.deepEqual(write(`${blind}:position`, 0), {
     actions: [
       { actionId: 0, parameters: { percentage: 100 } },
       { actionId: 6, parameters: { rotation: 127 } },
     ],
+    move: true,
   });
   assert.deepEqual(write(`${blind}:position`, 40), {
     actions: [{ actionId: 0, parameters: { percentage: 60 } }],
+    move: true,
   });
   assert.deepEqual(write(`ext:test:slats:${F.IDS.blind}:tilt`, 50), {
     actions: [{ actionId: 6, parameters: { rotation: 0 } }],
+    move: true,
   });
   assert.deepEqual(write(`ext:test:valance:${F.IDS.awning}:position`, 100), {
     actions: [{ actionId: 2, parameters: { percentage: 0 } }],
+    move: true,
   });
-  assert.deepEqual(write(`ext:test:dest:${F.IDS.roof}:state`, COVER_STATE.CLOSE), {
-    actions: [{ actionId: 6, parameters: { rotation: 127 } }],
-  });
+  // A slat roof is read-only in v1: no command at all.
+  const roof = `ext:test:dest:${F.IDS.roof}`;
+  assert.equal([...m.writers.keys()].filter((k) => k.startsWith(`${roof}:`)).length, 0);
+  assert.deepEqual(
+    deviceOf(m, roof).features.map((f) => [f.external_id.split(':').pop(), f.read_only]),
+    [
+      ['position', true],
+      ['cause', true],
+    ],
+  );
+  assert.ok(!m.motors.has(F.IDS.roof));
   for (const bad of [null, '', ' ', true, 101, -1, 'abc', undefined]) {
     assert.throws(() => write(`${shutter}:position`, bad), { refusal: 'badValue' });
   }

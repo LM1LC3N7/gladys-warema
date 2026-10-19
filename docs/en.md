@@ -19,8 +19,8 @@ cloud. Unofficial, not affiliated with WAREMA.
 | ---------------------- | ------------------------------------------------------------------------------------- |
 | Roller shutter / blind | a shutter: open, close, stop, position, and the cause of its last movement            |
 | Venetian blind         | a shutter: open, close, stop, position; the **slats** as their own device, on request |
-| Awning                 | a curtain: open, close, stop, position; its **valance** as a second curtain           |
-| Slat roof (slats only) | a shutter: open, close, stop, position of the slats                                   |
+| Awning                 | a curtain: open (= retract), close (= extend), stop, position; its **valance** too    |
+| Slat roof (slats only) | a shutter, **read-only** for now: position of the slats, cause of its last movement   |
 | Dimmer                 | a light: on/off and brightness (0-100 %)                                              |
 | Light switch           | a light: on/off                                                                       |
 | Switched load          | a read-only state and "Turn on" / "Turn off" buttons, **off by default**              |
@@ -30,8 +30,20 @@ Blinds and shutters are **never** switches: a "turn everything off" scene does
 not close them. The position follows the Gladys convention: 100 % = open, 0 %
 = closed (WAREMA counts the other way: 0 % open, 100 % closed). Fully opening
 or closing a venetian blind also opens or closes its slats, as the WAREMA app
-does. For an awning, "open" is what the WebControl pro calls 0 %, as in Home
-Assistant: check it on yours, and tell us if it is the other way round.
+does.
+
+**Awnings: Open = retract the awning** (WAREMA 0 %, as in Home Assistant),
+Close = extend it; position 100 % = retracted. Gladys has no "awning" type, so
+awnings and their valance are **curtains**: beware, a "close the curtains" of a
+scene, Google, Alexa, HomeKit or an assistant (MCP) **extends the awnings**.
+Check the direction on yours, and tell us if it is the other way round.
+
+**Slat roofs** are read-only for now (position of the slats and cause of the
+last movement): their direction and range are not checked on a real box yet.
+
+**Stop** always goes first: it never waits behind another command of the same
+product, nor behind a read, and the moves of that product still waiting are
+dropped.
 
 Window drives, potential-free actuators, load dimmers and the "identify"
 command are not offered yet.
@@ -74,7 +86,9 @@ use it, with or without Gladys. Keep the box on a trusted network.
 - **Allow switched loads** (off by default): a switched load often drives a
   patio heater. While the option is off, its buttons are refused, and the
   option is read again just before each request. They are buttons, never a
-  switch: a "turn everything off" does not reach them.
+  switch: a "turn everything off" does not reach them. **A WAREMA scene runs as
+  it is**, even when it holds a switched load (a heater) or a window: this
+  option does not block it.
 - **Slats of venetian blinds as their own device** (off by default): each
   venetian blind also offers a "<blind> – Slats" device (0-100 %). Beware: a
   "close all blinds" of Google, Alexa, HomeKit or an assistant (MCP) may target

@@ -188,3 +188,38 @@ test('no code path relearns a scene nor changes the configuration of the box', (
   // The protections of the box are never overridden: no automatic resend of a refused command.
   assert.doesNotMatch(read('src/app.js'), /retry.*refused|resend/i);
 });
+
+test('the docs and the option say that a WAREMA scene runs as it is (I4)', () => {
+  const field = manifest.config_schema.find((f) => f.key === 'allow_load_switches');
+  assert.match(
+    field.description.en,
+    /A WAREMA scene runs as it is, even when it holds a switched load/,
+  );
+  assert.match(field.description.en, /does not block it/);
+  assert.match(
+    field.description.fr,
+    /Une scène WAREMA s'exécute telle quelle, même si elle contient une charge commutée \(chauffage\) ou une fenêtre/,
+  );
+  assert.match(field.description.fr, /ne la bloque pas/);
+  const en = read('docs/en.md').replace(/\*\*/g, '').replace(/\s+/g, ' ');
+  const fr = read('docs/fr.md').replace(/\*\*/g, '').replace(/\s+/g, ' ');
+  assert.match(
+    en,
+    /A WAREMA scene runs as it is, even when it holds a switched load \(a heater\) or a window/,
+  );
+  assert.match(
+    fr,
+    /Une scène WAREMA s'exécute telle quelle, même si elle contient une charge commutée \(chauffage\) ou une fenêtre/,
+  );
+});
+
+test('the docs say Open = retract an awning, and that "close the curtains" extends them (M2)', () => {
+  const en = read('docs/en.md').replace(/\*\*/g, '').replace(/\s+/g, ' ');
+  const fr = read('docs/fr.md').replace(/\*\*/g, '').replace(/\s+/g, ' ');
+  assert.match(en, /Open = retract the awning/);
+  assert.match(en, /"close the curtains" .*extends the awnings/);
+  assert.match(fr, /Ouvrir = rentrer le store banne/);
+  assert.match(fr, /« ferme les rideaux » .*déploie les stores bannes/);
+  assert.match(fr, /toitures à lames sont en lecture seule/);
+  assert.match(read('TODO.md'), /Slat roofs read-only in v1/);
+});

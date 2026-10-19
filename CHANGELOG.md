@@ -14,8 +14,14 @@ the notes of the version's GitHub Release.
 
 - The channels of a WAREMA WMS WebControl pro, offered in the Discovery tab:
   roller shutters and venetian blinds (open, close, stop, position), awnings
-  and their valance (as curtains), slat roofs (position of the slats), dimmers
-  (on/off, brightness) and light switches. Blinds are never switches.
+  and their valance (as curtains: open = retract), slat roofs (read-only:
+  position of the slats and cause), dimmers (on/off, brightness) and light
+  switches. Blinds are never switches.
+- A STOP always leaves within 3.5 s: it skips the chain of its channel, goes
+  at the head of the queue of the box, and drops the moves of its channel
+  still waiting; no other request holds the line more than 2.5 s.
+- Moves are sent Instant (a refusal shows at the read back: cause, blocking);
+  stop, lights and loads Detailed, as Home Assistant.
 - The slats of venetian blinds as their own device, with the "Slats of
   venetian blinds as their own device" option (off by default: a "close all
   blinds" of a voice assistant may target it too).
@@ -36,6 +42,10 @@ the notes of the version's GitHub Release.
   configurable interval; busy answers asked again after 1 s, 3 tries at most.
 - A 429 or a 5xx pauses every path (1 minute to 6 hours), kept in `/data`;
   reconnection never faster than the read interval.
-- A "Test the connection" button, English and French texts.
+- A "Test the connection" button (through the client of the integration while
+  it runs), English and French texts, the HTTP reasons translated and the
+  codes of the box kept as they are; a 429 on a command is "refused by the
+  box (HTTP 429)"; one read back at most per channel and due time; a pause set
+  by any path holds the reconnection back.
 
 [Unreleased]: https://github.com/LM1LC3N7/gladys-warema/commits/main

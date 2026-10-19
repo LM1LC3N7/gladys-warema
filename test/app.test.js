@@ -181,7 +181,7 @@ test('a command the box refuses is reported as the box said it, with its protect
   assert.equal(ack.success, false);
   assert.equal(
     ack.error,
-    'La WebControl pro a refusé la commande : error 0x30007. Dernière cause indiquée : Alarme vent.',
+    'La WebControl pro a refusé la commande : erreur 0x30007. Dernière cause indiquée : Alarme vent.',
   );
   await tick(60_000);
   assert.equal(box.callsOf('action').length, 1, 'never sent again by the integration');
@@ -201,9 +201,15 @@ test('sent without an answer: "sent, without confirmation", read back; never sen
   await tick(TIMINGS.lightEchoes[0]);
   assert.equal(lastBadge(gladys, light).degraded, undefined, 'read back: confirmed again');
 
-  box.failures.set('action', new WmsError('network', 'connection refused', { sent: false }));
+  box.failures.set(
+    'action',
+    new WmsError('network', 'connection refused', { sent: false, netCode: 'ECONNREFUSED' }),
+  );
   ack = await gladys.fake.setValue(light, featureOf(light, 'on'), 1);
-  assert.equal(ack.error, T.denied.notSent('connection refused').fr);
+  assert.equal(
+    ack.error,
+    "La WebControl pro n'a pas pu être jointe (connexion refusée) : commande non envoyée.",
+  );
 });
 
 test('a command that waited past 3.5 s is refused and never leaves', async (t) => {
@@ -344,15 +350,123 @@ test('the badges tell a product out of radio reach, or blocked', async (t) => {
 });
 
 test('the Test button', async (t) => {
-  const { gladys, box } = await setup(t);
+  const { gladys, box, app } = await setup(t);
   let ack = await gladys.fake.action(ACTIONS.TEST, {});
   assert.equal(
     ack.data.message.en,
     'Connection OK: WMS WebControl pro with 9 channels (7 offered in Gladys), 2 scenes, 2 rooms.',
   );
-  box.failures.set('ping', new WmsError('network', 'host unreachable', { sent: false }));
+  // Running: the Test button goes through the client of the integration (I2).
+  assert.equal(box.clients.length, 1);
+  assert.equal(box.clients[0].closed, false);
+  box.failures.set(
+    'ping',
+    new WmsError('network', 'host unreachable', { sent: false, netCode: 'EHOSTUNREACH' }),
+  );
   ack = await gladys.fake.action(ACTIONS.TEST, {});
   assert.match(ack.data.message.en, /unreachable: host unreachable/);
+  assert.match(ack.data.message.fr, /injoignable : hôte injoignable/);
+  assert.equal(app.online, true, 'a failed test does not stop the integration');
+});
+
+test('offline, the Test button uses a client of its own, closed before starting again', async (t) => {
+  const { gladys, box, app, tick } = await setup(t, {
+    prepare: (b) =>
+      b.failures.set('ping', new WmsError('network', 'connection refused', { sent: false })),
+  });
+  assert.equal(app.online, false);
+  box.failures.delete('ping');
+  const before = box.clients.length;
+  const ack = await gladys.fake.action(ACTIONS.TEST, {});
+  assert.match(ack.data.message.en, /^Connection OK/);
+  const testClient = box.clients[before];
+  assert.equal(testClient.closed, true, 'closed');
+  await tick(0);
+  assert.equal(app.online, true, 'started again');
+  assert.ok(box.clients.length > before + 1);
+  assert.ok(box.clients.at(-1) !== testClient);
+});
+
+test('a pause set by the Test button holds the reconnection back (I3)', async (t) => {
+  const { gladys, box, app, tick } = await setup(t, {
+    prepare: (b) =>
+      b.failures.set('ping', new WmsError('network', 'connection refused', { sent: false })),
+  });
+  box.failures.delete('ping');
+  box.failures.set(
+    'configuration',
+    new WmsError('server', 'HTTP 503', { status: 503, sent: true }),
+  );
+  const ack = await gladys.fake.action(ACTIONS.TEST, {});
+  assert.match(ack.data.message.fr, /erreur \(HTTP 503\)/);
+  const left = app.store.pausedUntil - Date.now();
+  assert.ok(left >= 60_000);
+  const pings = box.callsOf('ping').length;
+  await tick(30_000); // the reconnection delay (read interval) falls inside the pause
+  assert.equal(box.callsOf('ping').length, pings, 'nothing asked during the pause');
+  box.failures.delete('configuration');
+  await tick(left - 30_000);
+  assert.equal(box.callsOf('ping').length, pings + 1, 'asked again at its end');
+});
+
+test('a STOP skips the chain of its channel, and the moves still waiting are dropped (B1)', async (t) => {
+  const { gladys, box, tick } = await setup(t);
+  const awning = await created(gladys, tick, 'Markise (Terrasse)');
+  let release;
+  const held = new Promise((resolve) => (release = resolve));
+  // Hold the moves only (they wait at the box, not yet sent).
+  box.gates.set('action', ([actions]) => (actions[0].actionId === 16 ? undefined : held));
+  const close = gladys.fake.setValue(awning, featureOf(awning, 'state'), COVER_STATE.CLOSE);
+  const position = gladys.fake.setValue(awning, featureOf(awning, 'position'), 50);
+  await settle();
+  const stop = await gladys.fake.setValue(awning, featureOf(awning, 'state'), COVER_STATE.STOP);
+  assert.equal(stop.success, true, stop.error);
+  release();
+  const [a, b] = await Promise.all([close, position]);
+  assert.equal(a.error, T.denied.stopped.fr);
+  assert.equal(b.error, T.denied.stopped.fr);
+  const sent = box.callsOf('action');
+  assert.equal(sent.length, 1, 'only the STOP left');
+  assert.equal(sent[0].stop, true);
+  assert.equal(sent[0].instant, false, 'a STOP is Detailed');
+});
+
+test('moves are sent Instant; stop, lights and loads Detailed (I1)', async (t) => {
+  const { gladys, box, tick } = await setup(t, {
+    config: { ...CONFIG, allow_load_switches: true },
+  });
+  const shutter = await created(gladys, tick, 'Wohnzimmer (Wohnbereich)');
+  const light = await created(gladys, tick, 'Wandlicht (Wohnbereich)');
+  const heater = await created(gladys, tick, 'Heizung links (Terrasse)');
+  await gladys.fake.setValue(shutter, featureOf(shutter, 'position'), 20);
+  await gladys.fake.setValue(shutter, featureOf(shutter, 'state'), COVER_STATE.STOP);
+  await gladys.fake.setValue(light, featureOf(light, 'on'), 1);
+  await gladys.fake.setValue(heater, featureOf(heater, 'turn_on'), 1);
+  assert.deepEqual(
+    box.callsOf('action').map((c) => c.instant),
+    [true, false, false, false],
+  );
+});
+
+test('a 429 on a command is "refused by the box (HTTP 429)" (M1)', async (t) => {
+  const { gladys, box, tick } = await setup(t);
+  const light = await created(gladys, tick, 'Wandlicht (Wohnbereich)');
+  box.failures.set(
+    'action',
+    new WmsError('rate', 'too many requests (HTTP 429)', { status: 429, sent: true }),
+  );
+  const ack = await gladys.fake.setValue(light, featureOf(light, 'on'), 1);
+  assert.equal(ack.error, 'La WebControl pro a refusé la commande : trop de demandes (HTTP 429).');
+});
+
+test('one read back at most per channel and per due time (M3)', async (t) => {
+  const { gladys, box, tick } = await setup(t, { config: { ...CONFIG, poll_interval: 600 } });
+  const light = await created(gladys, tick, 'Wandlicht (Wohnbereich)');
+  const before = box.callsOf('status').length;
+  await gladys.fake.setValue(light, featureOf(light, 'on'), 1);
+  await gladys.fake.setValue(light, featureOf(light, 'on'), 0);
+  await tick(TIMINGS.lightEchoes[0]);
+  assert.equal(box.callsOf('status').length, before + 1);
 });
 
 test('an invalid address is said in the status, nothing is sent', async (t) => {

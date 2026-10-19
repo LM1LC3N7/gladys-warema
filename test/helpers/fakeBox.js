@@ -27,7 +27,7 @@ export function fakeBox() {
     clients: [],
     /** method -> WmsError (or a function returning one) thrown by the next calls */
     failures: new Map(),
-    /** method -> promise awaited before the call (to hold it) */
+    /** method -> promise awaited before the call (to hold it), or (args) => promise|undefined */
     gates: new Map(),
     /** whether an action changes the values (like a real box) */
     apply: true,
@@ -37,12 +37,13 @@ export function fakeBox() {
     const client = { url, closed: false };
     const call = async (name, args, options) => {
       const gate = box.gates.get(name);
-      if (gate) {
-        await gate;
+      const held = typeof gate === 'function' ? gate(args) : gate;
+      if (held) {
+        await held;
       }
       // The moment the request leaves its socket.
       options?.guard?.();
-      box.calls.push({ name, args });
+      box.calls.push({ name, args, instant: options?.instant, stop: options?.stop });
       const failure = box.failures.get(name);
       if (failure) {
         throw typeof failure === 'function' ? failure() : failure;

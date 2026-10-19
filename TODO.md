@@ -23,10 +23,17 @@ up to date at the end of every milestone.
       option, scenes as buttons, last movement cause, protection badges,
       3.5 s command deadline, 429/5xx pause kept in /data, test button, en/fr,
       docs, cover. Tested against simulated answers and a simulated box only.
+- [x] **Milestone 1 fixes — review** (2026-10-19): STOP first (B1), moves
+      Instant (I1), Test button through the main client (I2), pauses held by
+      open() (I3), scenes documented as run as they are (I4), slat roofs
+      read-only (I5), 429 on a command, one read back per due time, French
+      HTTP reasons, awning direction documented.
 - [ ] **Milestone 2 — real WebControl pro**: run against a real box and compare
       with the WAREMA app (see "To check"); turn the answers (anonymized) into
       fixtures.
-- [ ] **Milestone 3 — more**: window drives (read-only first, then commands
+- [ ] **Milestone 3 — more**: slat roofs commanded (open, close, stop,
+      position) once their direction and range are checked on a real box,
+      window drives (read-only first, then commands
       behind an option: an open window is an entry), the "identify" command as
       a button, load dimmers, an override of the slat range (pywmspro keeps
       one), potential-free actuators (enumeration) behind an option.
@@ -35,11 +42,13 @@ up to date at the end of every milestone.
 
 ## To check on a real WebControl pro
 
-- The answer of `action` with `responseType` 1 (Detailed): its shape, how long
-  it takes (the request has at most 4.5 s), and how a wind or rain alarm
-  refuses a command (an `errors` list as for `getStatus`? accepted then
-  ignored?). The integration reports any `errors` list as a refusal, with its
-  codes as they are.
+- The answer of `action` with `responseType` 1 (Detailed, stop, lights,
+  loads): its shape and how long it takes (2.5 s at most here, then "sent,
+  without confirmation"); with `responseType` 0 (moves), whether a wind or
+  rain alarm still answers with an `errors` list, or accepts and ignores (the
+  read back then shows the cause). The integration reports any `errors` list
+  as a refusal, with its codes as they are.
+- Whether 2.5 s is enough for a `getStatus` over the radio of a far product.
 - The answer of `sceneActions` (the WAREMA documentation spells it
   `sceneAction`; pywmspro and Home Assistant send `sceneActions`).
 - The direction of an awning: Home Assistant opens it with percentage 0; is
@@ -85,10 +94,29 @@ up to date at the end of every milestone.
   docs).
 - **Only the channels added in Gladys are read** (each status goes over the
   WMS radio, 0.5 s apart); a channel is read once when it is added.
-- **Actions with `responseType` 1** (Detailed, as Home Assistant for stop and
-  lights) so a refusal of the box comes back in the answer; scenes with
-  `responseType` 0. A Detailed answer slower than the budget gives "sent,
-  without confirmation" and a read back.
+- **Moves with `responseType` 0** (Instant): the box answers at once, and a
+  refusal (wind, rain) shows at the read back (cause, blocking badge). Stop,
+  lights and loads with `responseType` 1 (Detailed, as Home Assistant); scenes
+  with 0. A Detailed answer slower than 2.5 s gives "sent, without
+  confirmation" and a read back.
+- **STOP first** (review B1): a STOP skips the chain of its channel, goes at
+  the head of the queue of the box, and drops the moves of its channel still
+  waiting (refused "a stop arrived meanwhile"). Every other request holds the
+  line 2.5 s at most (reads time out after 2.5 s, pywmspro waits 5 s), and the
+  configuration never leaves while a command waits: a STOP leaves within
+  3.5 s whatever was in flight.
+- **Test button**: through the client of the integration while it runs (one
+  request at a time at the box); a client of its own only offline, closed
+  before the integration starts again.
+- **Pauses**: open() and the reads check the pause before asking anything, so
+  a pause set by the Test button or a command holds the reconnection back.
+- **Slat roofs read-only in v1** (review I5): position of the slats and cause
+  only, until their direction and range are checked on a real box.
+- **Awnings**: Open = retract (WAREMA 0 %, as Home Assistant); being curtains,
+  a "close the curtains" extends them: said in the docs.
+- **Error texts**: the English message stays in the logs; the statuses and
+  acks give the reason in French or English (`reasonOf`), HTTP statuses and
+  codes of the box kept as they are.
 - **Not offered in v1**: window drives (opening a window is an entry, and a
   "close all" may target it), potential-free actuators (enumeration: anything
   can be wired), load dimmers, toggles, impulses, identify.

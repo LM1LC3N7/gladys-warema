@@ -11,7 +11,9 @@
 // path, and the pause is kept in /data across restarts.
 //
 // Commands: one at a time per channel, sent within 3.5 s of their arrival or
-// refused. Switched loads only when the user allowed them, the option read
+// refused. A STOP skips the chain of its channel and goes at the head of the
+// queue of the box (every other request holds the line 2.5 s at most), and
+// the moves of that channel still waiting are dropped. Switched loads only when the user allowed them, the option read
 // again at the moment the request leaves. A command the box refuses (wind,
 // rain or ice alarm, blocking, any error code) is reported as the box said it,
 // and never sent again by the integration: the protections of the box are
@@ -84,9 +86,14 @@ export class WaremaApp {
     this.transports = new Map();
     /** command chains, per destination (or scene) */
     this.chains = new Map();
+    /** commands numbered on arrival; destination id -> number of its last STOP */
+    this.commandSeq = 0;
+    this.stopSeq = new Map();
     /** destination ids whose command was sent without confirmation */
     this.unconfirmed = new Set();
     this.readBackTimers = new Set();
+    /** `<destination>@<due time>` of the read backs planned */
+    this.readBackKeys = new Set();
     this.timer = undefined;
     this.reading = false;
     this.failures = 0;
@@ -178,6 +185,7 @@ export class WaremaApp {
       this.timers.clearTimeout(timer);
     }
     this.readBackTimers.clear();
+    this.readBackKeys.clear();
     this.timer = undefined;
     this.timerAt = undefined;
     this.publisher.stop();
@@ -239,7 +247,19 @@ export class WaremaApp {
 
   // --- Connection ----------------------------------------------------------------
 
+  /** The time left of a pause (429 or 5xx), set by any path (reads, a command, the Test button). */
+  pauseLeft() {
+    return Math.max(0, this.store.pausedUntil - this.now());
+  }
+
   async open(generation) {
+    const left = this.pauseLeft();
+    if (left > 0) {
+      // A pause set meanwhile by another path: nothing is asked before its end.
+      await this.setStatus(false, T.failure({ kind: 'rate' }));
+      this.schedule(generation, left, () => this.open(generation));
+      return;
+    }
     try {
       this.client?.close?.();
       this.client = this.connect({ url: this.config.url, timers: this.timers, now: this.now });
@@ -311,7 +331,7 @@ export class WaremaApp {
     }
     await this.setStatus(false, T.failure(err));
     await this.publishAllTransports();
-    this.schedule(generation, delay, () => this.open(generation));
+    this.schedule(generation, Math.max(delay, this.pauseLeft()), () => this.open(generation));
   }
 
   /** An error on a side path (command, read back, scan): a 429 or a 5xx pauses everything. */
@@ -331,6 +351,12 @@ export class WaremaApp {
   }
 
   async read(generation) {
+    const left = this.pauseLeft();
+    if (left > 0) {
+      // Paused by another path (a command, the Test button): read at its end.
+      this.scheduleRead(generation, left);
+      return;
+    }
     this.reading = true;
     try {
       if (this.now() - this.inventoryAt >= TIMINGS.inventory) {
@@ -648,10 +674,15 @@ export class WaremaApp {
   }
 
   /** The timeout and the guard of a command request, from what is left before `deadline`. */
-  commandOptions(deadline, writer) {
+  commandOptions(deadline, writer, seq) {
     const check = () => {
       if (this.now() > deadline) {
         throw this.denied('tooLate');
+      }
+      // A STOP of this channel arrived after this command: it never leaves.
+      const stopped = this.stopSeq.get(writer.destinationId);
+      if (seq !== undefined && stopped !== undefined && stopped > seq) {
+        throw this.denied('stopped');
       }
       // The option is read once more at the moment the request leaves.
       this.checkAllowed(writer);
@@ -677,6 +708,25 @@ export class WaremaApp {
       }
       this.checkAllowed(writer);
       this.checkReady();
+      let call;
+      try {
+        // Pure: the value checked and turned into actions before any wait.
+        call = writer.write(value);
+      } catch (err) {
+        throw err?.refusal ? this.denied(err.refusal) : err;
+      }
+      this.commandSeq += 1;
+      const seq = this.commandSeq;
+      if (call.stop) {
+        // A STOP never waits behind the chain of its channel (a slow move,
+        // a refused one): it goes at once, at the head of the queue of the
+        // box, and the moves of the channel still waiting are dropped.
+        this.stopSeq.set(writer.destinationId, seq);
+        const options = this.commandOptions(deadline, writer);
+        options.check();
+        await this.send(this.client, writer, call, options, generation);
+        return;
+      }
       const key = writer.destinationId ?? `scene:${writer.sceneId}`;
       await this.serialized(key, async () => {
         // The option and the connection may have changed while the command waited.
@@ -686,14 +736,8 @@ export class WaremaApp {
           throw this.denied('notConnected');
         }
         const client = this.client;
-        const options = this.commandOptions(deadline, writer);
+        const options = this.commandOptions(deadline, writer, seq);
         options.check();
-        let call;
-        try {
-          call = writer.write(value);
-        } catch (err) {
-          throw err?.refusal ? this.denied(err.refusal) : err;
-        }
         await this.send(client, writer, call, options, generation);
       });
     } catch (err) {
@@ -726,7 +770,8 @@ export class WaremaApp {
       } else {
         await client.action(
           call.actions.map((a) => ({ destinationId: destId, ...a })),
-          options.send,
+          // Moves Instant (a refusal shows at the read back), the rest Detailed.
+          { ...options.send, instant: Boolean(call.move), stop: Boolean(call.stop) },
         );
       }
     } catch (err) {
@@ -735,11 +780,12 @@ export class WaremaApp {
         throw err;
       }
       if (err?.sent === false) {
-        throw this.denied('notSent', err.message);
+        throw this.denied('notSent', err);
       }
       this.sideError(generation, err);
       if (err?.kind === 'rate') {
-        throw this.denied('paused');
+        // The box answered 429: it refused this command (and everything pauses).
+        throw this.denied('refused', err);
       }
       if (REFUSALS.has(err?.kind)) {
         const status = destId === undefined ? undefined : this.statuses.get(destId);
@@ -749,7 +795,7 @@ export class WaremaApp {
         if (destId !== undefined) {
           this.readBack(destId, TIMINGS.lightEchoes[0]);
         }
-        throw this.denied('refused', err.message, {
+        throw this.denied('refused', err, {
           cause: PROTECTIONS.has(status?.cause) ? status.cause : undefined,
           blocking: status?.blocking,
         });
@@ -778,11 +824,21 @@ export class WaremaApp {
     this.logger.debug(`WAREMA command sent for ${writer.role} ${destId ?? writer.sceneId}`);
   }
 
-  /** Reads one destination back later (after a command, or once created). */
+  /**
+   * Reads one destination back later (after a command, or once created):
+   * one read at most per channel and per due time (two commands in a row do
+   * not double the radio traffic).
+   */
   readBack(destId, delay) {
     const generation = this.generation;
+    const key = `${destId}@${this.now() + delay}`;
+    if (this.readBackKeys.has(key)) {
+      return;
+    }
+    this.readBackKeys.add(key);
     const timer = this.timers.setTimeout(async () => {
       this.readBackTimers.delete(timer);
+      this.readBackKeys.delete(key);
       if (!this.current(generation) || !this.online || !this.client || this.paused()) {
         return;
       }
@@ -802,8 +858,10 @@ export class WaremaApp {
   // --- Configuration screen button ----------------------------------------------------
 
   /**
-   * "Test the connection": ping and getConfiguration with the saved
-   * configuration. When the integration was not connected, it starts again.
+   * "Test the connection": ping and getConfiguration. While the integration
+   * runs, through its own client (one request at a time at the box, a STOP
+   * still first); offline, through a client of its own, closed before the
+   * integration starts again.
    */
   async testConnection() {
     const config = this.config;
@@ -813,19 +871,20 @@ export class WaremaApp {
     if (this.paused()) {
       return T.failure({ kind: 'rate' });
     }
-    const client = this.connect({ url: config.url, timers: this.timers, now: this.now });
+    const shared = this.online && this.client ? this.client : undefined;
+    const client = shared ?? this.connect({ url: config.url, timers: this.timers, now: this.now });
+    const options = shared ? {} : { timeout: TIMINGS.testTimeout, long: true };
+    let result;
+    let restart = false;
     try {
-      await client.ping({ timeout: TIMINGS.testTimeout });
-      const json = await client.configuration({ timeout: TIMINGS.testTimeout });
+      await client.ping(options);
+      const json = await client.configuration(options);
       if (!Array.isArray(json?.destinations)) {
         throw new WmsError('format', 'the configuration has no list of destinations');
       }
       const inventory = inventoryOf(json);
-      if (!this.online && this.running) {
-        this.logger.info('The WebControl pro answers again (Test button): starting again');
-        this.background(this.start(this.raw));
-      }
-      return T.test.ok({
+      restart = !this.online && this.running;
+      result = T.test.ok({
         destinations: inventory.destinations.length,
         offered: inventory.destinations.filter((d) => roleOf(d)).length,
         scenes: inventory.scenes.length,
@@ -838,9 +897,16 @@ export class WaremaApp {
       if (!(err instanceof WmsError)) {
         this.logger.error('Connection test failed', err);
       }
-      return T.failure(err);
+      result = T.failure(err);
     } finally {
-      client.close?.();
+      if (!shared) {
+        client.close?.();
+      }
     }
+    if (restart) {
+      this.logger.info('The WebControl pro answers again (Test button): starting again');
+      this.background(this.start(this.raw));
+    }
+    return result;
   }
 }

@@ -2,7 +2,7 @@
 
 [Gladys Assistant](https://gladysassistant.com) external integration for
 **WAREMA** installations through the **WMS WebControl pro**: its channels
-(roller shutters, venetian blinds, awnings and their valance, slat roofs,
+(roller shutters, venetian blinds, awnings and their valance, slat roofs read-only,
 dimmers, light switches, switched loads) and its **scenes** become Gladys
 devices of the Discovery tab. Gladys reads their states and controls them
 through the free local API of the box, on the local network only (plain HTTP,
@@ -26,11 +26,15 @@ Gladys ⇄ SDK ⇄ src/handlers.js ⇄ src/app.js (WaremaApp) ⇄ src/wms.js ⇄
 - **Protocol**: every command is `POST /commonCommand` with
   `{"protocolVersion": "1.0", "command": …, "source": 2, …}`: `ping`,
   `getConfiguration` (destinations, rooms, scenes), `getStatus` (one
-  destination at a time), `action` (`responseType` 1, several actions of a
-  same channel in one request) and `sceneActions` (`sceneActionType` 1: run,
-  never relearn). An answer with an `errors` list is a refusal of the box,
+  destination at a time), `action` (several actions of a same channel in one
+  request; moves with `responseType` 0, Instant, their refusal seen at the read
+  back; stop, lights and loads with `responseType` 1, Detailed, as Home
+  Assistant) and `sceneActions` (`sceneActionType` 1: run, never relearn). An answer with an `errors` list is a refusal of the box,
   reported with its codes as they are.
-- **Radio**: one request at a time, commands before reads; status requests at
+- **Radio**: one request at a time: a STOP at the head, then the other
+  commands, the reads, the configuration last (it never leaves while a command
+  waits); no request but a STOP holds the line more than 2.5 s (reads time out
+  after 2.5 s), so a STOP always leaves within 3.5 s; status requests at
   least 0.5 s apart; a status answered busy (`0x50005`) is asked again after
   1 s, 3 tries at most (as pywmspro). Only the channels added in Gladys are
   read, at the configured interval (30 s by default), the configuration every
@@ -47,7 +51,10 @@ Gladys ⇄ SDK ⇄ src/handlers.js ⇄ src/app.js (WaremaApp) ⇄ src/wms.js ⇄
   never overridden: a refused command is reported as the box said it (with
   the last protection it reported) and never sent again; badges show an active
   protection, `blocking` and `heartbeatError`.
-- **Commands**: one at a time per channel, sent within 3.5 s or refused; the
+- **Commands**: one at a time per channel, sent within 3.5 s or refused; a
+  STOP skips that chain, and the moves of its channel still waiting are
+  dropped; the Test button shares the client of the integration while it
+  runs; the
   ack never waits for a publication to Gladys; "sent, without confirmation"
   once a request may have left without an answer.
 - **Failures**: box unreachable → status message and `unreachable` badges,

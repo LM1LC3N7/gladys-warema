@@ -198,3 +198,50 @@ test('the parsing helpers', () => {
   assert.equal({}.polluted, undefined);
   assert.equal(json.status, 0);
 });
+
+test('a STOP goes at the head of the queue; the configuration never leaves while a command waits', async (t) => {
+  const { sim, client } = await withBox(t);
+  let release;
+  const held = new Promise((resolve) => (release = resolve));
+  sim.handlers.set('ping', (_b, res, answer) => {
+    held.then(() => answer(res, 200, { status: 0 }));
+    return true;
+  });
+  const first = client.ping();
+  const config = client.configuration();
+  const read = client.status(IDS.shutter);
+  const scene = client.scene(IDS.sceneNight);
+  const stop = client.action([{ destinationId: IDS.awning, actionId: 16, parameters: {} }], {
+    stop: true,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  release();
+  await Promise.all([first, config, read, scene, stop]);
+  assert.deepEqual(
+    sim.requests.map((r) => r.body.command),
+    ['ping', 'action', 'sceneActions', 'getStatus', 'getConfiguration'],
+  );
+  assert.equal(sim.requests[1].body.responseType, 1, 'a STOP is Detailed');
+});
+
+test('moves are Instant; nothing but a STOP holds the line more than 2.5 s', async (t) => {
+  const { sim, client } = await withBox(t);
+  await client.action(
+    [{ destinationId: IDS.shutter, actionId: 0, parameters: { percentage: 0 } }],
+    {
+      instant: true,
+    },
+  );
+  assert.equal(sim.requests.at(-1).body.responseType, 0);
+  sim.handlers.set('action', () => true); // never answers
+  const t0 = Date.now();
+  await assert.rejects(
+    client.action([{ destinationId: IDS.shutter, actionId: 0, parameters: { percentage: 9 } }], {
+      timeout: 4500,
+    }),
+    (err) => err.kind === 'timeout' && err.sent === true,
+  );
+  const held = Date.now() - t0;
+  assert.ok(held >= TIMINGS.lineHold - 100 && held < TIMINGS.lineHold + 500, `${held} ms`);
+  assert.equal(TIMINGS.readTimeout, 2500);
+});

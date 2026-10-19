@@ -60,9 +60,63 @@ const trim = (text) =>
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
+const NETWORK = {
+  ECONNREFUSED: { en: 'connection refused', fr: 'connexion refusée' },
+  ECONNRESET: { en: 'connection reset', fr: 'connexion interrompue' },
+  EHOSTUNREACH: { en: 'host unreachable', fr: 'hôte injoignable' },
+  ENETUNREACH: { en: 'network unreachable', fr: 'réseau injoignable' },
+  ENOTFOUND: { en: 'unknown host name', fr: "nom d'hôte inconnu" },
+  EAI_AGAIN: { en: 'host name not resolved', fr: "nom d'hôte non résolu" },
+  ETIMEDOUT: { en: 'connection timed out', fr: 'délai de connexion dépassé' },
+  EPIPE: { en: 'connection closed', fr: 'connexion fermée' },
+};
+
+/**
+ * The reason of an error in English and French. The HTTP statuses and the
+ * error codes of the box are kept as they are.
+ */
+export function reasonOf(err) {
+  const http = err?.status !== undefined ? ` (HTTP ${err.status})` : '';
+  const codes = Array.isArray(err?.codes) ? err.codes.join(', ') : '';
+  switch (err?.kind) {
+    case 'refused':
+      return codes
+        ? { en: `error ${codes}`, fr: `erreur ${codes}` }
+        : { en: 'error without a code', fr: 'erreur sans code' };
+    case 'busy':
+      return { en: `busy (${codes || '0x50005'})`, fr: `occupée (${codes || '0x50005'})` };
+    case 'rate':
+      return { en: 'too many requests (HTTP 429)', fr: 'trop de demandes (HTTP 429)' };
+    case 'denied':
+      return { en: `access refused${http}`, fr: `accès refusé${http}` };
+    case 'notfound':
+      return { en: 'not found (HTTP 404)', fr: 'introuvable (HTTP 404)' };
+    case 'redirect':
+      return { en: `redirected${http}`, fr: `redirection${http}` };
+    case 'server':
+    case 'http':
+      return { en: `error${http}`, fr: `erreur${http}` };
+    case 'size':
+      return { en: 'answer too large', fr: 'réponse trop grande' };
+    case 'format':
+      return {
+        en: 'not an answer of a WMS WebControl pro',
+        fr: "pas une réponse d'une WMS WebControl pro",
+      };
+    case 'timeout': {
+      const s = err.seconds ?? '?';
+      return { en: `no answer within ${s} s`, fr: `pas de réponse en ${s} s` };
+    }
+    case 'network':
+      return NETWORK[err.netCode] ?? { en: 'network error', fr: 'erreur réseau' };
+    default:
+      return { en: err?.message ?? 'unknown error', fr: err?.message ?? 'erreur inconnue' };
+  }
+}
+
 /** Why the box is unreachable or refuses, with the hint that fits. */
 function failure(err) {
-  const reason = err?.message ?? 'unknown error';
+  const reason = reasonOf(err);
   switch (err?.kind) {
     case 'rate':
       return {
@@ -71,8 +125,8 @@ function failure(err) {
       };
     case 'server':
       return {
-        en: `The WebControl pro answers with an error (${reason}): paused for a while, then tried again.`,
-        fr: `La WebControl pro répond par une erreur (${reason}) : pause d'un moment, puis nouvel essai.`,
+        en: `The WebControl pro answers with an error (${reason.en}): paused for a while, then tried again.`,
+        fr: `La WebControl pro répond par une erreur (${reason.fr}) : pause d'un moment, puis nouvel essai.`,
       };
     case 'notfound':
     case 'format':
@@ -80,23 +134,22 @@ function failure(err) {
     case 'denied':
     case 'http':
       return {
-        en: `This address does not answer like a WMS WebControl pro (${reason}). Type its IP address, like 192.168.1.30.`,
-        fr: `Cette adresse ne répond pas comme une WMS WebControl pro (${reason}). Saisissez son adresse IP, par exemple 192.168.1.30.`,
+        en: `This address does not answer like a WMS WebControl pro (${reason.en}). Type its IP address, like 192.168.1.30.`,
+        fr: `Cette adresse ne répond pas comme une WMS WebControl pro (${reason.fr}). Saisissez son adresse IP, par exemple 192.168.1.30.`,
       };
     case 'refused':
     case 'busy':
       return {
-        en: `The WebControl pro refused the request (${reason}). Tried again in a moment.`,
-        fr: `La WebControl pro a refusé la demande (${reason}). Nouvel essai dans un moment.`,
+        en: `The WebControl pro refused the request (${reason.en}). Tried again in a moment.`,
+        fr: `La WebControl pro a refusé la demande (${reason.fr}). Nouvel essai dans un moment.`,
       };
     default:
       return {
-        en: `The WebControl pro is unreachable: ${reason}. Check its IP address and that it is on. Retrying in a moment.`,
-        fr: `La WebControl pro est injoignable : ${reason}. Vérifiez son adresse IP et qu'elle est allumée. Nouvel essai dans un moment.`,
+        en: `The WebControl pro is unreachable: ${reason.en}. Check its IP address and that it is on. Retrying in a moment.`,
+        fr: `La WebControl pro est injoignable : ${reason.fr}. Vérifiez son adresse IP et qu'elle est allumée. Nouvel essai dans un moment.`,
       };
   }
 }
-
 const CONFIG_ERRORS = {
   empty: {
     en: 'Type the IP address of your WMS WebControl pro in the configuration, like 192.168.1.30.',
@@ -173,9 +226,13 @@ export const T = {
       en: 'The command waited too long behind another request to the WebControl pro: not sent.',
       fr: 'La commande a attendu trop longtemps derrière une autre demande à la WebControl pro : non envoyée.',
     },
-    notSent: (reason) => ({
-      en: `The WebControl pro could not be reached (${reason}): command not sent.`,
-      fr: `La WebControl pro n'a pas pu être jointe (${reason}) : commande non envoyée.`,
+    stopped: {
+      en: 'A stop of this product arrived meanwhile: this command is dropped, not sent.',
+      fr: 'Un arrêt de ce produit est arrivé entre-temps : cette commande est abandonnée, non envoyée.',
+    },
+    notSent: (err) => ({
+      en: `The WebControl pro could not be reached (${reasonOf(err).en}): command not sent.`,
+      fr: `La WebControl pro n'a pas pu être jointe (${reasonOf(err).fr}) : commande non envoyée.`,
     }),
     badValue: {
       en: 'Value not accepted for this feature: command not sent.',
@@ -201,9 +258,10 @@ export const T = {
      * The box refused the command: its answer as it is, and the protection or
      * blocking it last reported for this product, if any.
      */
-    refused: (reason, context) => {
-      const en = [`The WebControl pro refused the command: ${reason}.`];
-      const fr = [`La WebControl pro a refusé la commande : ${reason}.`];
+    refused: (err, context) => {
+      const reason = reasonOf(err);
+      const en = [`The WebControl pro refused the command: ${reason.en}.`];
+      const fr = [`La WebControl pro a refusé la commande : ${reason.fr}.`];
       if (context?.cause !== undefined) {
         en.push(`Last cause it reported: ${causeText(context.cause, 'en')}.`);
         fr.push(`Dernière cause indiquée : ${causeText(context.cause, 'fr')}.`);

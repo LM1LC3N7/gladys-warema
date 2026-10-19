@@ -10,8 +10,9 @@
 //   roller shutter drive (percentage)  shutter: open/close/stop, position
 //   slat drive (percentage)            shutter (venetian blind); its slat
 //                                      rotation as its own device on request
-//   slat rotation alone (slat roof)    shutter: open/close/stop, position of
-//                                      the slats
+//   slat rotation alone (slat roof)    shutter, READ-ONLY in v1: the position
+//                                      of the slats and the cause (direction
+//                                      and range not checked on a real box)
 //   light dimming (percentage)         light: on/off and brightness
 //   light switch                       light: on/off
 //   load switch                        a read-only state and "Turn on" /
@@ -288,14 +289,22 @@ const feature = (key, language, category, type, { min = 0, max = 1, write, read,
 /** The features of a cover moved by a percentage drive (+ optional slats on open/close). */
 function coverFeatures(category, language, { drive, rotate, stop }) {
   const range = rotate ? rangeOf(rotate) : undefined;
+  // A move is sent Instant (its refusal shows at the read back: cause,
+  // blocking); a STOP is sent Detailed, at the head of the queue, outside the
+  // chain of its channel.
+  const move = (actions) => ({ actions, move: true });
   const open = () =>
-    rotate
-      ? [act(drive, { percentage: 0 }), act(rotate, { rotation: range.min })]
-      : [act(drive, { percentage: 0 })];
+    move(
+      rotate
+        ? [act(drive, { percentage: 0 }), act(rotate, { rotation: range.min })]
+        : [act(drive, { percentage: 0 })],
+    );
   const close = () =>
-    rotate
-      ? [act(drive, { percentage: 100 }), act(rotate, { rotation: range.max })]
-      : [act(drive, { percentage: 100 })];
+    move(
+      rotate
+        ? [act(drive, { percentage: 100 }), act(rotate, { rotation: range.max })]
+        : [act(drive, { percentage: 100 })],
+    );
   return [
     feature('state', language, category, T.SHUTTER.STATE, {
       min: -1,
@@ -303,13 +312,13 @@ function coverFeatures(category, language, { drive, rotate, stop }) {
       write(value) {
         const v = numberIn(value, -1, 1);
         if (v === COVER_STATE.OPEN) {
-          return { actions: open() };
+          return open();
         }
         if (v === COVER_STATE.CLOSE) {
-          return { actions: close() };
+          return close();
         }
         if (v === COVER_STATE.STOP) {
-          return stop ? { actions: [act(stop, {})] } : refuse('noStop');
+          return stop ? { actions: [act(stop, {})], stop: true } : refuse('noStop');
         }
         return refuse('badValue');
       },
@@ -324,12 +333,12 @@ function coverFeatures(category, language, { drive, rotate, stop }) {
         }
         // Fully open or closed: the slats too, as the WAREMA app does.
         if (rotate && Math.round(v) === 100) {
-          return { actions: open() };
+          return open();
         }
         if (rotate && Math.round(v) === 0) {
-          return { actions: close() };
+          return close();
         }
-        return { actions: [act(drive, { percentage: percentageOf(v) })] };
+        return move([act(drive, { percentage: percentageOf(v) })]);
       },
       read(status) {
         const p = status.values.get(drive.id)?.percentage;
@@ -339,53 +348,29 @@ function coverFeatures(category, language, { drive, rotate, stop }) {
   ];
 }
 
-/** The features of the slats of a blind or a slat roof (a position of the slats). */
-function slatFeatures(language, { rotate, stop }, { withState }) {
+/**
+ * The position of the slats: of a venetian blind (its own device, `tilt`,
+ * commanded), or of a slat roof (`position`, READ-ONLY in v1: the direction
+ * and the range of a roof are not checked on a real box yet).
+ */
+function slatFeature(language, { rotate }, { key, writable }) {
   const range = rangeOf(rotate);
-  const position = feature(
-    withState ? 'position' : 'tilt',
-    language,
-    C.SHUTTER,
-    T.SHUTTER.POSITION,
-    {
-      max: 100,
-      write(value) {
-        const v = numberIn(value, 0, 100);
-        if (v === undefined) {
-          refuse('badValue');
+  return feature(key, language, C.SHUTTER, T.SHUTTER.POSITION, {
+    max: 100,
+    write: writable
+      ? (value) => {
+          const v = numberIn(value, 0, 100);
+          if (v === undefined) {
+            refuse('badValue');
+          }
+          return { actions: [act(rotate, { rotation: rotationOf(v, range) })], move: true };
         }
-        return { actions: [act(rotate, { rotation: rotationOf(v, range) })] };
-      },
-      read(status) {
-        const r = status.values.get(rotate.id)?.rotation;
-        return r === undefined ? undefined : { state: tiltPercentOf(r, range) };
-      },
+      : undefined,
+    read(status) {
+      const r = status.values.get(rotate.id)?.rotation;
+      return r === undefined ? undefined : { state: tiltPercentOf(r, range) };
     },
-  );
-  if (!withState) {
-    return [position];
-  }
-  return [
-    feature('state', language, C.SHUTTER, T.SHUTTER.STATE, {
-      min: -1,
-      max: 1,
-      write(value) {
-        const v = numberIn(value, -1, 1);
-        if (v === COVER_STATE.OPEN) {
-          return { actions: [act(rotate, { rotation: range.min })] };
-        }
-        if (v === COVER_STATE.CLOSE) {
-          return { actions: [act(rotate, { rotation: range.max })] };
-        }
-        if (v === COVER_STATE.STOP) {
-          return stop ? { actions: [act(stop, {})] } : refuse('noStop');
-        }
-        return refuse('badValue');
-      },
-      feedback: false,
-    }),
-    position,
-  ];
+  });
 }
 
 /** The last driving cause, as a read-only text in the language of the features. */
@@ -592,7 +577,11 @@ export function buildModel(idsOf, inventory, { language = 'fr', publishTilt = fa
         features = [...coverFeatures(C.SHUTTER, language, found), causeFeature(language)];
         break;
       case 'slatRoof':
-        features = [...slatFeatures(language, found, { withState: true }), causeFeature(language)];
+        // Read-only in v1: the position of the slats and the cause.
+        features = [
+          slatFeature(language, found, { key: 'position', writable: false }),
+          causeFeature(language),
+        ];
         break;
       case 'dimmer':
       case 'light':
@@ -604,7 +593,7 @@ export function buildModel(idsOf, inventory, { language = 'fr', publishTilt = fa
     const ids = idsOf('dest', String(dest.id));
     add(dest.id, ids, { name, external_id: ids.device, ...base }, features);
     model.counts.offered += 1;
-    const cover = ['awning', 'shutter', 'blind', 'slatRoof'].includes(role);
+    const cover = ['awning', 'shutter', 'blind'].includes(role);
     if (cover) {
       model.motors.add(dest.id);
     }
@@ -643,7 +632,7 @@ export function buildModel(idsOf, inventory, { language = 'fr', publishTilt = fa
       // The slats as their own device: a "close all blinds" of a voice
       // assistant may target it too, so it is published on request only.
       const sIds = idsOf('slats', String(dest.id));
-      const sFeatures = slatFeatures(language, found, { withState: false });
+      const sFeatures = [slatFeature(language, found, { key: 'tilt', writable: true })];
       add(
         dest.id,
         sIds,

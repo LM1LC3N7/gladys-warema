@@ -13,7 +13,7 @@ import { registerHandlers } from '../src/handlers.js';
 import { COVER_STATE } from '../src/model.js';
 import { StateStore } from '../src/store.js';
 import { captureLogger } from './helpers/fakeBox.js';
-import { DISCOVERED, IDS } from './helpers/fixtures.js';
+import { DISCOVERED, IDS, statusAnswer } from './helpers/fixtures.js';
 import { boxServer, waitFor } from './helpers/boxServer.js';
 
 test('a WebControl pro, end to end: devices, states, commands, refusal, test', async (t) => {
@@ -46,7 +46,7 @@ test('a WebControl pro, end to end: devices, states, commands, refusal, test', a
     protocolVersion: '1.0',
     command: 'action',
     source: 2,
-    responseType: 1,
+    responseType: 0,
     actions: [{ destinationId: IDS.shutter, actionId: 0, parameters: { percentage: 100 } }],
   });
   await waitFor(async () => {
@@ -61,8 +61,73 @@ test('a WebControl pro, end to end: devices, states, commands, refusal, test', a
   });
   const refused = await gladys.fake.setValue(shutter, state, COVER_STATE.OPEN);
   assert.equal(refused.success, false);
-  assert.match(refused.error, /refusé la commande : error 0x30007/);
+  assert.match(refused.error, /refusé la commande : erreur 0x30007/);
 
   const tested = await gladys.fake.action(ACTIONS.TEST, {});
   assert.match(tested.data.message.en, /^Connection OK: WMS WebControl pro with 9 channels/);
+});
+
+async function live(t) {
+  const sim = await boxServer();
+  const gladys = createFakeGladys({ config: { box_address: sim.address } });
+  const logger = captureLogger();
+  const app = new WaremaApp({ gladys, logger, store: new StateStore({ dir: null }) });
+  registerHandlers(gladys, app, logger);
+  t.after(async () => {
+    app.stop();
+    await sim.close();
+  });
+  await gladys.connect();
+  await waitFor(() => app.online);
+  const named = (name) => gladys.fake.discoveredDevices.find((d) => d.name === name);
+  const feat = (d, key) => d.features.find((f) => f.external_id === `${d.external_id}:${key}`);
+  return { sim, gladys, app, named, feat };
+}
+
+const stopsOf = (sim) =>
+  sim.requests.filter((r) => r.body?.command === 'action' && r.body.actions[0].actionId === 16);
+
+test('B1, scenario A: a STOP right after a slow close of an awning is sent and acked', async (t) => {
+  const { sim, gladys, named, feat } = await live(t);
+  const awning = named('Markise (Terrasse)');
+  await gladys.fake.deviceCreated(awning);
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  sim.handlers.set('action', (body, res, answer) => {
+    const moving = body.actions.some((a) => a.parameters.percentage !== undefined);
+    setTimeout(
+      () => answer(res, 200, { command: 'action', protocolVersion: '1.0.0' }),
+      moving ? 4000 : 0,
+    );
+    return true;
+  });
+  const t0 = Date.now();
+  const close = gladys.fake.setValue(awning, feat(awning, 'state'), COVER_STATE.CLOSE);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const stop = await gladys.fake.setValue(awning, feat(awning, 'state'), COVER_STATE.STOP);
+  assert.equal(stop.success, true, stop.error);
+  const left = stopsOf(sim)[0].at - t0;
+  assert.ok(left < 3500, `the STOP left after ${left} ms`);
+  assert.equal(stopsOf(sim)[0].body.responseType, 1, 'a STOP is Detailed');
+  const closed = await close;
+  assert.equal(closed.success, false, 'the slow close: sent, without confirmation');
+});
+
+test('B1: a STOP behind a status read that hangs (a channel out of radio reach) still leaves', async (t) => {
+  const { sim, gladys, named, feat } = await live(t);
+  const awning = named('Markise (Terrasse)');
+  await gladys.fake.deviceCreated(awning);
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  sim.handlers.set('getStatus', (b, res, answer) => {
+    if (b.destinations[0] === IDS.light) {
+      return true; // never answers
+    }
+    answer(res, 200, statusAnswer(b.destinations[0], sim.values.get(b.destinations[0])));
+    return true;
+  });
+  await gladys.fake.deviceCreated(named('Wandlicht (Wohnbereich)'));
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const t0 = Date.now();
+  const ack = await gladys.fake.setValue(awning, feat(awning, 'state'), COVER_STATE.STOP);
+  assert.equal(ack.success, true, ack.error);
+  assert.ok(stopsOf(sim)[0].at - t0 < 3500);
 });

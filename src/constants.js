@@ -144,8 +144,13 @@ export const TIMINGS = {
   flushInterval: 1000,
   /** An unchanged value is re-sent this often, so it stays recently dated in Gladys. */
   stateHeartbeat: 30 * 60_000,
-  /** One request (pywmspro waits 5 s). */
-  requestTimeout: 5000,
+  /**
+   * One read (ping, getStatus, getConfiguration). pywmspro waits 5 s; here
+   * 2.5 s, so a STOP arriving behind a read still leaves within 3.5 s.
+   */
+  readTimeout: 2500,
+  /** No request but a STOP holds the line of the box longer than this. */
+  lineHold: 2500,
   /** One request of the connection test (the button waits 60 s). */
   testTimeout: 10_000,
   /**
