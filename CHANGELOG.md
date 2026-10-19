@@ -12,44 +12,30 @@ the notes of the version's GitHub Release.
 
 ### Added
 
-- A working example of scene triggers, scene actions and dashboard widgets
-  (Gladys 5.1.0 or later).
-- `CHANGELOG.md`, rolled by the Release workflow.
-- A GitHub Release for every version, with its changelog section as notes: the
-  Gladys Supervision page links each version to the repository's releases.
-- CI runs the tests on Node 22 and 24, and builds the Docker image.
-- Dependabot keeps the npm dependencies and the GitHub Actions up to date.
-- `SECURITY.md` (how to report a vulnerability) and `CLAUDE.md` (project rules
-  for contributors and coding assistants).
-- Manifest tests: `version` matches `package.json`, `docker_image` is tagged
-  with it, descriptions hold 10 to 100 characters, placeholders are
-  multi-language objects.
-- The latitude and longitude fields show an example value as placeholder.
+- The channels of a WAREMA WMS WebControl pro, offered in the Discovery tab:
+  roller shutters and venetian blinds (open, close, stop, position), awnings
+  and their valance (as curtains), slat roofs (position of the slats), dimmers
+  (on/off, brightness) and light switches. Blinds are never switches.
+- The slats of venetian blinds as their own device, with the "Slats of
+  venetian blinds as their own device" option (off by default: a "close all
+  blinds" of a voice assistant may target it too).
+- Switched loads as a read-only state and "Turn on" / "Turn off" buttons,
+  refused unless "Allow switched loads" is on (read again when the request
+  leaves); never a switch.
+- WAREMA scenes as "Run" buttons (run, never relearnt).
+- The last movement cause of each cover (sun, wind, rain, ice alarm, timer,
+  manual…) as a read-only text; badges for an active protection, a blocked
+  product, a product out of radio reach and a command not confirmed.
+- The protections of the box are never overridden: a refused command is
+  reported with the codes of the box and the last protection it reported, and
+  never sent again by the integration.
+- Commands one at a time per channel, before the reads, sent within 3.5 s or
+  refused; "sent, without confirmation" once a request may have left; read
+  back after each command.
+- Reads of the channels added only, 0.5 s apart over the WMS radio, at a
+  configurable interval; busy answers asked again after 1 s, 3 tries at most.
+- A 429 or a 5xx pauses every path (1 minute to 6 hours), kept in `/data`;
+  reconnection never faster than the read interval.
+- A "Test the connection" button, English and French texts.
 
-### Changed
-
-- Node.js 22 or later is required (Node 20 is end-of-life).
-- Integration SDK 0.15.0. The tests now run against the fake Gladys of the
-  SDK, which refuses the payloads Gladys refuses.
-- The refresh interval is one minute minimum, the fastest Gladys polls a
-  device. The plug's power is only sent when it changes, and every 30
-  minutes otherwise.
-
-### Fixed
-
-- Gladys refused the devices of the Discovery tab: the weather station and
-  the plug declared their poll frequency in seconds instead of one of the
-  values Gladys accepts, and were never polled. They now poll every minute,
-  and the readings follow the refresh interval of the configuration.
-
-- The release commit no longer fails `npm run format:check`: the Release
-  workflow updates the manifest `version` and `docker_image` in place instead
-  of re-printing the whole file with `jq`.
-- The integration can write to `/data`: the image creates the directory owned
-  by the `node` user, a new Docker volume was owned by root.
-- A sub-container running the integration's own image follows it to the new
-  tag at each release, as well as in the manifest of the build summary: it kept
-  the previous tag, which may not exist on the registry. Sub-containers on a
-  third-party image (a broker, a database...) keep theirs.
-
-[Unreleased]: https://github.com/GladysAssistant/integration-template-js/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-warema/commits/main

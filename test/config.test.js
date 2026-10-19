@@ -1,33 +1,48 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeConfig, DEFAULT_CONFIG } from '../src/config.js';
+import { DEFAULTS, normalizeConfig, parseBoxAddress } from '../src/config.js';
 
-test('normalizeConfig returns the defaults when called with no argument', () => {
-  assert.deepEqual(normalizeConfig(), DEFAULT_CONFIG);
+test('the address of the WebControl pro', () => {
+  assert.deepEqual(parseBoxAddress('192.168.1.30'), {
+    url: 'http://192.168.1.30',
+    host: '192.168.1.30',
+  });
+  assert.equal(parseBoxAddress(' http://192.168.1.30/ ').url, 'http://192.168.1.30');
+  assert.equal(parseBoxAddress('http://192.168.1.30/commonCommand').url, 'http://192.168.1.30');
+  assert.equal(parseBoxAddress('webcontrol').url, 'http://webcontrol');
+  assert.equal(parseBoxAddress('192.168.1.30:8080').url, 'http://192.168.1.30:8080');
+  assert.equal(parseBoxAddress('[fd00::30]').url, 'http://[fd00::30]');
+  assert.equal(parseBoxAddress('').error, 'empty');
+  assert.equal(parseBoxAddress('https://192.168.1.30').error, 'https');
+  assert.equal(parseBoxAddress('ftp://192.168.1.30').error, 'invalid');
+  assert.equal(parseBoxAddress('http://u:p@192.168.1.30').error, 'credentials');
+  assert.equal(parseBoxAddress('http://192.168.1.30/system').error, 'path');
+  assert.equal(parseBoxAddress('http://192.168.1.30/?x=1').error, 'path');
+  assert.equal(parseBoxAddress('webcontrol.local').error, 'local-name');
+  assert.equal(parseBoxAddress('http://[::1').error, 'invalid');
 });
 
-test('normalizeConfig keeps user values over the defaults', () => {
-  const config = normalizeConfig({ latitude: 45.5, longitude: -73.6, unit: 'fahrenheit' });
-  assert.equal(config.latitude, 45.5);
-  assert.equal(config.longitude, -73.6);
-  assert.equal(config.unit, 'fahrenheit');
-});
-
-test('normalizeConfig coerces numeric strings coming from a form', () => {
-  const config = normalizeConfig({ latitude: '48.8', longitude: '2.3', poll_frequency: '600' });
-  assert.equal(config.latitude, 48.8);
-  assert.equal(config.longitude, 2.3);
-  assert.equal(config.poll_frequency, 600);
-  assert.equal(typeof config.poll_frequency, 'number');
-});
-
-test('normalizeConfig falls back to the default for a missing numeric field', () => {
-  const config = normalizeConfig({ unit: 'celsius' });
-  assert.equal(config.poll_frequency, DEFAULT_CONFIG.poll_frequency);
-});
-
-test('GLADYS_PREFER_LOCAL defaults to true and only an explicit false disables it', () => {
-  assert.equal(normalizeConfig().GLADYS_PREFER_LOCAL, true);
-  assert.equal(normalizeConfig({ GLADYS_PREFER_LOCAL: true }).GLADYS_PREFER_LOCAL, true);
-  assert.equal(normalizeConfig({ GLADYS_PREFER_LOCAL: false }).GLADYS_PREFER_LOCAL, false);
+test('the configuration, normalized', () => {
+  const c = normalizeConfig({ box_address: '192.168.1.30' });
+  assert.equal(c.error, undefined);
+  assert.equal(c.url, 'http://192.168.1.30');
+  assert.equal(c.pollInterval, 30);
+  assert.equal(c.language, 'fr');
+  assert.equal(c.publishTilt, false, 'the slats device off by default');
+  assert.equal(c.allowLoads, false, 'switched loads read-only by default');
+  assert.equal(normalizeConfig({}).error, 'empty');
+  const bounded = normalizeConfig({
+    ...DEFAULTS,
+    box_address: '1.2.3.4',
+    poll_interval: 1,
+    language: 'de',
+    allow_load_switches: 'true',
+    publish_tilt: '1',
+  });
+  assert.equal(bounded.pollInterval, 10);
+  assert.equal(bounded.language, 'fr');
+  assert.equal(bounded.allowLoads, true);
+  assert.equal(bounded.publishTilt, true);
+  assert.equal(normalizeConfig({ box_address: 'x', poll_interval: 99999 }).pollInterval, 3600);
+  assert.equal(normalizeConfig({ box_address: 'x', allow_load_switches: 'yes' }).allowLoads, false);
 });

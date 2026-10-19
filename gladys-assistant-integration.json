@@ -1,177 +1,116 @@
 {
   "manifest_version": 1,
   "type": "device",
-  "name": "Demo Devices Template",
+  "name": "WAREMA WebControl pro",
   "description": {
-    "en": "Starter template showing sensors, a switch, a dimmable light and a smart plug.",
-    "fr": "Template de démarrage : capteurs, interrupteur, lampe variable et prise connectée."
+    "en": "WAREMA blinds, shutters, awnings, lights and scenes, through the WMS WebControl pro. Unofficial.",
+    "fr": "Stores, volets, stores bannes, lumières et scènes WAREMA, par la WMS WebControl pro. Non officiel."
   },
-  "version": "1.0.0",
-  "docker_image": "ghcr.io/gladysassistant/integration-template-js:1.0.0",
+  "version": "0.1.0",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-warema:0.1.0",
   "gladys_version": ">=5.1.0",
-  "cover_image": "https://raw.githubusercontent.com/GladysAssistant/integration-template-js/master/cover.png",
-  "categories": ["lighting", "security", "environment"],
-  "transports": ["local", "cloud"],
+  "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-warema/main/cover.png",
+  "categories": ["lighting", "protocols"],
+  "transports": ["local"],
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Getting started", "fr": "Pour commencer" },
+      "label": {
+        "en": "Your WAREMA installation in Gladys",
+        "fr": "Votre installation WAREMA dans Gladys"
+      },
       "description": {
-        "en": "The demo weather station reads real data from the free Open-Meteo API: pick the coordinates to observe. No account, no API key.",
-        "fr": "La station météo de démonstration lit de vraies données via l'API gratuite Open-Meteo : choisissez les coordonnées à observer. Pas de compte, pas de clé d'API."
+        "en": "The channels of your WMS WebControl pro are offered in the Discovery tab: roller shutters and venetian blinds (open, close, stop, position; slats on request), awnings and their valance, slat roofs, lights (on/off, brightness), switched loads, and your WAREMA scenes as buttons. Everything stays on your local network, through the free local API of the box (plain HTTP, no password: keep it on a trusted network). The wind, rain and ice protections of the box always win: a command it refuses is reported as it is. Switched loads stay read-only until you allow them below. Never tested with a real WebControl pro yet. Unofficial, not affiliated with WAREMA.",
+        "fr": "Les canaux de votre WMS WebControl pro sont proposés dans l'onglet Découverte : volets roulants et stores à lamelles (ouverture, fermeture, arrêt, position ; lamelles sur demande), stores bannes et leur lambrequin, toitures à lames, lumières (allumage, luminosité), charges commutées, et vos scènes WAREMA en boutons. Tout reste sur votre réseau local, par l'API locale libre de la box (HTTP simple, sans mot de passe : gardez-la sur un réseau de confiance). Les protections vent, pluie et gel de la box gardent toujours la main : une commande qu'elle refuse est annoncée telle quelle. Les charges commutées restent en lecture seule tant que vous ne les autorisez pas ci-dessous. Jamais testée avec une vraie WebControl pro pour l'instant. Non officiel, sans lien avec WAREMA."
       },
       "links": [
         {
-          "url": "https://open-meteo.com/en/docs",
-          "label": { "en": "Open-Meteo documentation", "fr": "Documentation Open-Meteo" }
+          "url": "https://github.com/LM1LC3N7/gladys-warema/blob/main/docs/fr.md",
+          "label": { "en": "Guide (French)", "fr": "Guide (français)" }
+        },
+        {
+          "url": "https://github.com/LM1LC3N7/gladys-warema/blob/main/docs/en.md",
+          "label": { "en": "Guide (English)", "fr": "Guide (anglais)" }
         }
       ]
     },
     {
-      "key": "latitude",
-      "type": "number",
-      "label": { "en": "Latitude", "fr": "Latitude" },
+      "key": "box_address",
+      "type": "string",
+      "label": { "en": "Address of the WebControl pro", "fr": "Adresse de la WebControl pro" },
       "description": {
-        "en": "Latitude used for the demo weather sensor.",
-        "fr": "Latitude utilisée par le capteur météo de démonstration."
+        "en": "The local IP address of your WMS WebControl pro, like 192.168.1.30 (shown in your router, or in the WMS WebControl pro app). Preferably a fixed address reserved in your router.",
+        "fr": "L'adresse IP locale de votre WMS WebControl pro, par exemple 192.168.1.30 (visible dans votre box internet, ou dans l'app WMS WebControl pro). De préférence une adresse fixe réservée dans votre box."
       },
-      "placeholder": { "en": "e.g. 48.8566", "fr": "ex. 48.8566" },
-      "required": true,
-      "default": 48.8566,
-      "min": -90,
-      "max": 90
+      "placeholder": { "en": "192.168.1.30", "fr": "192.168.1.30" },
+      "required": true
     },
     {
-      "key": "longitude",
+      "key": "poll_interval",
       "type": "number",
-      "label": { "en": "Longitude", "fr": "Longitude" },
+      "label": { "en": "Read interval (s)", "fr": "Intervalle de lecture (s)" },
       "description": {
-        "en": "Longitude used for the demo weather sensor.",
-        "fr": "Longitude utilisée par le capteur météo de démonstration."
+        "en": "How often the states of the devices you added are read (10 to 3600 s). Each read goes over the WMS radio, one channel every half second: keep it reasonable with many channels.",
+        "fr": "Fréquence de lecture des états des appareils ajoutés (10 à 3600 s). Chaque lecture passe par la radio WMS, un canal toutes les demi-secondes : restez raisonnable avec beaucoup de canaux."
       },
-      "placeholder": { "en": "e.g. 2.3522", "fr": "ex. 2.3522" },
-      "required": true,
-      "default": 2.3522,
-      "min": -180,
-      "max": 180
-    },
-    {
-      "key": "unit",
-      "type": "select",
-      "label": { "en": "Temperature unit", "fr": "Unité de température" },
       "required": false,
-      "default": "celsius",
+      "default": 30,
+      "min": 10,
+      "max": 3600
+    },
+    {
+      "key": "language",
+      "type": "select",
+      "label": {
+        "en": "Language of the feature names",
+        "fr": "Langue des noms des fonctionnalités"
+      },
+      "description": {
+        "en": "Used for the names of the features of the devices added from now on, and for the movement causes.",
+        "fr": "Sert aux noms des fonctionnalités des appareils ajoutés désormais, et aux causes des mouvements."
+      },
+      "required": false,
+      "default": "fr",
       "options": [
-        { "value": "celsius", "label": { "en": "Celsius", "fr": "Celsius" } },
-        { "value": "fahrenheit", "label": { "en": "Fahrenheit", "fr": "Fahrenheit" } }
+        { "value": "fr", "label": { "en": "French", "fr": "Français" } },
+        { "value": "en", "label": { "en": "English", "fr": "Anglais" } }
       ]
     },
     {
-      "key": "poll_frequency",
-      "type": "number",
-      "label": { "en": "Refresh interval (s)", "fr": "Intervalle de rafraîchissement (s)" },
+      "key": "allow_load_switches",
+      "type": "boolean",
+      "label": {
+        "en": "Allow switched loads",
+        "fr": "Autoriser les charges commutées"
+      },
       "description": {
-        "en": "How often sensors are polled, in seconds (one minute minimum).",
-        "fr": "Fréquence d'interrogation des capteurs, en secondes (une minute minimum)."
+        "en": "Off by default: a switched load of the WebControl pro (a patio heater is often wired to one) is read-only. On, its \"Turn on\" and \"Turn off\" buttons send the command, from the dashboard and the scenes. Never a switch: a \"turn everything off\" does not reach it.",
+        "fr": "Désactivé par défaut : une charge commutée de la WebControl pro (un chauffage de terrasse y est souvent branché) est en lecture seule. Activé, ses boutons « Allumer » et « Éteindre » envoient la commande, depuis le tableau de bord et les scènes. Jamais un interrupteur : un « tout éteindre » ne l'atteint pas."
       },
       "required": false,
-      "default": 300,
-      "min": 60,
-      "max": 3600
+      "default": false
+    },
+    {
+      "key": "publish_tilt",
+      "type": "boolean",
+      "label": {
+        "en": "Slats of venetian blinds as their own device",
+        "fr": "Lamelles des stores en appareil séparé"
+      },
+      "description": {
+        "en": "Off by default. On, each venetian blind also offers a \"<blind> – Slats\" device in Discovery. Beware: a \"close all blinds\" of Google, Alexa, HomeKit or an assistant (MCP) may target it too.",
+        "fr": "Désactivé par défaut. Activé, chaque store à lamelles propose aussi un appareil « <store> – Lamelles » dans la Découverte. Attention : un « fermer tous les stores » de Google, Alexa, HomeKit ou d'un assistant (MCP) peut aussi le viser."
+      },
+      "required": false,
+      "default": false
     }
   ],
   "actions": [
     {
-      "key": "test_weather",
-      "label": { "en": "Test the weather provider", "fr": "Tester le fournisseur météo" },
-      "timeout_seconds": 30
-    },
-    {
-      "key": "identify",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ]
-    }
-  ],
-  "scene_triggers": [
-    {
-      "key": "motion_detected",
-      "label": { "en": "Motion detected", "fr": "Mouvement détecté" },
-      "description": {
-        "en": "A demo motion sensor saw a person or an animal move.",
-        "fr": "Un détecteur de démonstration a vu bouger une personne ou un animal."
-      },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Sensor", "fr": "Détecteur" }
-        },
-        {
-          "key": "target",
-          "type": "multi_select",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" },
-          "options": [
-            { "value": "person", "label": { "en": "Person", "fr": "Personne" } },
-            { "value": "animal", "label": { "en": "Animal", "fr": "Animal" } }
-          ]
-        }
-      ],
-      "variables": [
-        {
-          "key": "target",
-          "type": "string",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" }
-        }
-      ]
-    }
-  ],
-  "scene_actions": [
-    {
-      "key": "identify_device",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "description": {
-        "en": "Make a device signal itself (the demo light blinks).",
-        "fr": "Fait se signaler un appareil (la lampe de démonstration clignote)."
-      },
-      "timeout_seconds": 15,
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ],
-      "outputs": [
-        {
-          "key": "signalled",
-          "type": "boolean",
-          "label": { "en": "Device signalled", "fr": "Appareil signalé" }
-        }
-      ]
-    }
-  ],
-  "widgets": [
-    {
-      "key": "demo_status",
-      "label": { "en": "Demo status", "fr": "État de la démo" },
-      "description": {
-        "en": "Live temperature and plug power, plug connection and observed location.",
-        "fr": "Température et puissance en direct, connexion de la prise, position observée."
-      },
-      "icon": "activity",
-      "action_timeout_seconds": 15
+      "key": "test_connection",
+      "label": { "en": "Test the connection", "fr": "Tester la connexion" },
+      "timeout_seconds": 60
     }
   ]
 }

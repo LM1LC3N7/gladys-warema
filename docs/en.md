@@ -1,61 +1,113 @@
-# Demo Devices Template
+# WAREMA WebControl pro
 
-This is the user documentation of the integration. Gladys re-hosts this file
-and shows a permanent **Documentation** link to it in the Configuration screen
-(in the user's language, with English as the fallback) — it is when
-configuring that the user needs it most. Keep the short onboarding hints in
-the `section` blocks of the manifest `config_schema`; put the long
-step-by-step (screenshots, troubleshooting…) here.
+This integration connects Gladys to **your WAREMA WMS WebControl pro** through
+its **local API**, and offers the channels of your installation in the
+**Discovery** tab of Gladys: roller shutters, venetian blinds, awnings, slat
+roofs, lights and switched loads, as well as your **WAREMA scenes**. Once a
+device is added, Gladys reads its state at the interval you choose and
+controls it through the box. Everything stays on your local network: no
+cloud. Unofficial, not affiliated with WAREMA.
+
+> **Development version (0.1).** Written from the WAREMA API documentation and
+> the pywmspro library, and tested against a simulated box only: it has
+> **never been tested with a real WebControl pro** yet. Feedback is welcome on
+> the GitHub repository.
 
 ## What you get
 
-Six demo devices show up after installation: a weather station (real data
-from Open-Meteo), a switch, a dimmable light, a smart plug with power
-metering, a motion sensor and a camera.
+| WAREMA channel         | In Gladys                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------- |
+| Roller shutter / blind | a shutter: open, close, stop, position, and the cause of its last movement            |
+| Venetian blind         | a shutter: open, close, stop, position; the **slats** as their own device, on request |
+| Awning                 | a curtain: open, close, stop, position; its **valance** as a second curtain           |
+| Slat roof (slats only) | a shutter: open, close, stop, position of the slats                                   |
+| Dimmer                 | a light: on/off and brightness (0-100 %)                                              |
+| Light switch           | a light: on/off                                                                       |
+| Switched load          | a read-only state and "Turn on" / "Turn off" buttons, **off by default**              |
+| WAREMA scene           | a "Run" button: the scene runs as from the WAREMA app                                 |
 
-## Configuration
+Blinds and shutters are **never** switches: a "turn everything off" scene does
+not close them. The position follows the Gladys convention: 100 % = open, 0 %
+= closed (WAREMA counts the other way: 0 % open, 100 % closed). Fully opening
+or closing a venetian blind also opens or closes its slats, as the WAREMA app
+does. For an awning, "open" is what the WebControl pro calls 0 %, as in Home
+Assistant: check it on yours, and tell us if it is the other way round.
 
-1. Open the **Configuration** tab of the integration.
-2. Set the **latitude** and **longitude** the demo weather station should
-   observe (they default to Paris), and pick your temperature unit.
-   The **refresh interval** sets how often the weather station and the
-   plug's power are read: every 5 minutes by default, every minute at most.
-3. Save: the devices appear in the **Discovery** tab, ready to be added.
+Window drives, potential-free actuators, load dimmers and the "identify"
+command are not offered yet.
 
-The **Prefer the local connection** toggle drives the demo plug: it reports
-the channel it actually uses as a badge (local or cloud), with an orange dot
-when it runs degraded (local refused, cloud fallback).
+### Wind, rain and ice protections
 
-## Actions
+The protections of the WebControl pro (wind, rain, ice, frost, safety) **always
+keep the upper hand**: Gladys never tries to get around them. A command the box
+refuses is reported **as the box said it** (its error code), with the last
+protection it reported for that product, and Gladys never sends it again by
+itself. Each cover has a read-only "Last movement cause" text (sun, wind
+alarm, rain alarm, timer, manual…), usable in your scenes, and its badge turns
+orange while a protection is active, while the box reports the product as
+blocked, or while it no longer reaches it over the radio.
 
-- **Test the weather provider** — performs a live request to Open-Meteo and
-  shows the current temperature and humidity under the button.
-- **Identify a device** — pick one of your devices in the list and it will
-  signal itself (the demo light "blinks" in the logs).
+## Requirements
 
-## Scenes
+- A WAREMA WMS WebControl pro (container version 11H or later, which brings the
+  API) set up with WMS studio pro, on the same local network as Gladys.
+- Its IP address, preferably fixed (reserved in your router).
 
-The integration adds its own cards to the scene editor (Gladys 5.1 or
-later), under the **Integrations** category:
+The API of the WebControl pro has **no password**: anyone on your network can
+use it, with or without Gladys. Keep the box on a trusted network.
 
-- **Motion detected** (trigger) — starts the scene when a demo motion sensor
-  sees something move. Optionally pick the sensor and what moved (person,
-  animal); left empty, any detection matches. The following actions can
-  read what moved with `{{triggerEvent.data.target}}`.
-- **Identify a device** (action) — makes the chosen device signal itself.
-  It returns whether the device could signal itself, so the following
-  actions can depend on it.
+## Setup
 
-## Dashboard
+1. In Gladys, open the **WAREMA WebControl pro** integration, **Configuration**
+   tab.
+2. Type the **IP address** of the box (like `192.168.1.30`) and save.
+3. Click **Test the connection**: it shows the number of channels, scenes and
+   rooms.
+4. Open the **Discovery** tab and add the devices you want.
 
-Add the **Demo status** widget to a dashboard: it shows the live
-temperature of the weather station and the power of the office plug, the
-connection the plug currently uses (orange when degraded) and the observed
-location. Its **Identify the light** button makes the demo light signal
-itself.
+## Options
+
+- **Read interval** (30 s by default, 10 to 3600 s): how often the states of
+  the devices you **added** are read. Only those are read: each read goes over
+  the WMS radio, one channel every half second. After a command, the channel is
+  read again a few times while it moves.
+- **Allow switched loads** (off by default): a switched load often drives a
+  patio heater. While the option is off, its buttons are refused, and the
+  option is read again just before each request. They are buttons, never a
+  switch: a "turn everything off" does not reach them.
+- **Slats of venetian blinds as their own device** (off by default): each
+  venetian blind also offers a "<blind> – Slats" device (0-100 %). Beware: a
+  "close all blinds" of Google, Alexa, HomeKit or an assistant (MCP) may target
+  this device too.
+- **Language of the feature names**: French or English.
+
+## Security and privacy
+
+- Gladys talks only to the address you typed, over plain HTTP on your local
+  network; redirections are never followed. There is no secret to keep.
+- Commands leave one at a time per channel, within 3.5 s, or are refused. A
+  command that may have left without an answer (a timeout once sent, an answer
+  not understood) is told "sent, without confirmation" and the channel is read
+  again; a refusal of the box is told "refused" with its code; a box
+  unreachable before sending gives "not sent".
+- A "429" or a server error of the box pauses everything (1 minute to 6 hours),
+  and the pause survives a restart. After a failure, Gladys never asks the box
+  more often than the read interval.
+- Scenes are never relearnt, and nothing changes the configuration of the box.
 
 ## Troubleshooting
 
-The integration logs everything it does: check the integration logs from the
-Gladys UI (or `docker logs` on the host) with `LOG_LEVEL=debug` for the full
-detail.
+- **"Unreachable"**: check the IP address (no `.local` name, the container does
+  not resolve them) and that the box is powered.
+- **"Does not answer like a WMS WebControl pro"**: the address answers, but not
+  with the API; check the address, and that the box runs a version with the
+  API.
+- **Orange badge**: hover it: a protection is active, the product is blocked,
+  out of radio reach, or a command was not confirmed yet.
+
+## Credits
+
+Logic ported from [pywmspro](https://github.com/mback2k/pywmspro) (Apache-2.0)
+and the Home Assistant `wmspro` integration (Apache-2.0), after the API
+documentation published by WAREMA. WAREMA is a trademark of WAREMA Renkhoff SE;
+this project is not affiliated with WAREMA.

@@ -1,67 +1,118 @@
-# Template de démonstration
+# WAREMA WebControl pro
 
-Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
-fichier et affiche un lien **Documentation** permanent vers lui dans l'écran
-de configuration (dans la langue de l'utilisateur, avec l'anglais en repli) —
-c'est au moment de configurer que l'utilisateur en a le plus besoin. Gardez
-les courtes indications d'accueil dans les blocs `section` du `config_schema`
-du manifest ; mettez ici le pas-à-pas détaillé (captures d'écran, dépannage…).
+Cette intégration relie Gladys à **votre WAREMA WMS WebControl pro** par son
+**API locale**, et propose les canaux de votre installation dans l'onglet
+**Découverte** de Gladys : volets roulants, stores à lamelles, stores bannes,
+toitures à lames, lumières et charges commutées, ainsi que vos **scènes
+WAREMA**. Une fois un appareil ajouté, Gladys lit son état à l'intervalle que
+vous choisissez et le pilote par la box. Tout reste sur votre réseau local :
+pas de cloud. Non officiel, sans lien avec WAREMA.
+
+> **Version de développement (0.1).** Écrite d'après la documentation de l'API
+> WAREMA et la bibliothèque pywmspro, et testée contre une box simulée
+> seulement : elle n'a **jamais été testée avec une vraie WebControl pro**
+> pour l'instant. Vos retours sont les bienvenus sur le dépôt GitHub.
 
 ## Ce que vous obtenez
 
-Six appareils de démonstration apparaissent après l'installation : une
-station météo (vraies données Open-Meteo), un interrupteur, une lampe
-variable, une prise connectée avec mesure de puissance, un détecteur de
-mouvement et une caméra.
+| Canal WAREMA                   | Dans Gladys                                                                                         |
+| ------------------------------ | --------------------------------------------------------------------------------------------------- |
+| Volet roulant / store          | un volet : ouverture, fermeture, arrêt, position, et la cause de son dernier mouvement              |
+| Store à lamelles               | un volet : ouverture, fermeture, arrêt, position ; les **lamelles** en appareil séparé, sur demande |
+| Store banne                    | un rideau : ouverture, fermeture, arrêt, position ; son **lambrequin** en second rideau             |
+| Toiture à lames (lames seules) | un volet : ouverture, fermeture, arrêt, position des lames                                          |
+| Variateur                      | une lumière : allumage et luminosité (0-100 %)                                                      |
+| Interrupteur de lumière        | une lumière : allumage                                                                              |
+| Charge commutée                | un état en lecture seule et des boutons « Allumer » / « Éteindre », **désactivés par défaut**       |
+| Scène WAREMA                   | un bouton « Lancer » : la scène s'exécute comme depuis l'app WAREMA                                 |
 
-## Configuration
+Les stores et volets ne sont **jamais** des interrupteurs : une scène « tout
+éteindre » ne les ferme pas. La position suit la convention de Gladys : 100 %
+= ouvert, 0 % = fermé (WAREMA compte à l'envers : 0 % ouvert, 100 % fermé).
+Ouvrir ou fermer complètement un store à lamelles ouvre ou ferme aussi ses
+lamelles, comme l'app WAREMA. Pour un store banne, « ouvrir » correspond à ce
+que la WebControl pro appelle 0 %, comme dans Home Assistant : vérifiez-le
+chez vous, et dites-nous si c'est l'inverse.
 
-1. Ouvrez l'onglet **Configuration** de l'intégration.
-2. Renseignez la **latitude** et la **longitude** que la station météo de
-   démonstration doit observer (Paris par défaut), et choisissez votre unité
-   de température. L'**intervalle de rafraîchissement** règle la fréquence
-   de lecture de la station météo et de la puissance de la prise : toutes
-   les 5 minutes par défaut, toutes les minutes au plus.
-3. Enregistrez : les appareils apparaissent dans l'onglet **Découverte**,
-   prêts à être ajoutés.
+Les moteurs de fenêtre, les actionneurs libres de potentiel, les variateurs de
+charge et la commande « identifier » ne sont pas encore proposés.
 
-Le réglage **Préférer la connexion locale** pilote la prise de
-démonstration : elle affiche en badge le canal réellement utilisé (local ou
-cloud), avec un point orange quand elle fonctionne en mode dégradé (local
-refusé, bascule cloud).
+### Protections vent, pluie et gel
 
-## Actions
+Les protections de la WebControl pro (vent, pluie, gel, température, sécurité)
+**gardent toujours la main** : Gladys n'essaie jamais de les contourner. Une
+commande refusée par la box est annoncée **telle que la box l'a dit** (son code
+d'erreur), avec la dernière protection qu'elle a indiquée pour ce produit, et
+Gladys ne la renvoie jamais d'elle-même. Chaque volet ou store a un texte en
+lecture seule « Cause du dernier mouvement » (soleil, alarme vent, alarme
+pluie, horaire, manuel…), utilisable dans vos scènes, et son badge passe à
+l'orange tant qu'une protection est active, que la box indique le produit
+comme bloqué, ou qu'elle ne le joint plus par radio.
 
-- **Tester le fournisseur météo** — effectue une requête en direct vers
-  Open-Meteo et affiche la température et l'humidité actuelles sous le
-  bouton.
-- **Identifier un appareil** — choisissez un de vos appareils dans la liste
-  et il se signale (la lampe de démonstration « clignote » dans les logs).
+## Prérequis
 
-## Scènes
+- Une WAREMA WMS WebControl pro (version de conteneur 11H ou plus, qui apporte
+  l'API) configurée avec WMS studio pro, sur le même réseau local que Gladys.
+- Son adresse IP, de préférence fixe (réservée dans votre box internet).
 
-L'intégration ajoute ses propres cartes à l'éditeur de scènes (Gladys 5.1
-ou plus récent), dans la catégorie **Intégrations** :
+L'API de la WebControl pro n'a **pas de mot de passe** : n'importe qui sur
+votre réseau peut s'en servir, avec ou sans Gladys. Gardez la box sur un réseau
+de confiance.
 
-- **Mouvement détecté** (déclencheur) — lance la scène quand un détecteur
-  de démonstration voit bouger quelque chose. Choisissez éventuellement le
-  détecteur et ce qui a bougé (personne, animal) ; laissés vides, toute
-  détection correspond. Les actions suivantes peuvent lire ce qui a bougé
-  avec `{{triggerEvent.data.target}}`.
-- **Identifier un appareil** (action) — fait se signaler l'appareil choisi.
-  Elle indique si l'appareil a pu se signaler, pour que les actions
-  suivantes puissent en dépendre.
+## Installation
 
-## Tableau de bord
+1. Dans Gladys, ouvrez l'intégration **WAREMA WebControl pro**, onglet
+   **Configuration**.
+2. Saisissez l'**adresse IP** de la box (par exemple `192.168.1.30`) et
+   enregistrez.
+3. Cliquez sur **Tester la connexion** : le nombre de canaux, de scènes et de
+   pièces s'affiche.
+4. Ouvrez l'onglet **Découverte** et ajoutez les appareils voulus.
 
-Ajoutez le widget **État de la démo** à un tableau de bord : il affiche en
-direct la température de la station météo et la puissance de la prise du
-bureau, la connexion utilisée par la prise (en orange si dégradée) et la
-position observée. Son bouton **Identifier la lampe** fait se signaler la
-lampe de démonstration.
+## Options
+
+- **Intervalle de lecture** (30 s par défaut, 10 à 3600 s) : fréquence de
+  lecture des états des appareils **ajoutés**. Seuls ceux-là sont lus : chaque
+  lecture passe par la radio WMS, un canal toutes les demi-secondes. Après une
+  commande, le canal est relu quelques fois pendant qu'il bouge.
+- **Autoriser les charges commutées** (désactivé par défaut) : une charge
+  commutée pilote souvent un chauffage de terrasse. Tant que l'option est
+  désactivée, ses boutons sont refusés, et l'option est relue juste avant
+  chaque envoi. Ce sont des boutons, jamais un interrupteur : un « tout
+  éteindre » ne les atteint pas.
+- **Lamelles des stores en appareil séparé** (désactivé par défaut) : chaque
+  store à lamelles propose aussi un appareil « <store> – Lamelles » (0-100 %).
+  Attention : un « fermer tous les stores » de Google, Alexa, HomeKit ou d'un
+  assistant (MCP) peut aussi viser cet appareil.
+- **Langue des noms des fonctionnalités** : français ou anglais.
+
+## Sécurité et vie privée
+
+- Gladys ne parle qu'à l'adresse saisie, en HTTP simple sur votre réseau local ;
+  les redirections ne sont jamais suivies. Il n'y a aucun secret à garder.
+- Les commandes partent une à une par canal, en moins de 3,5 s, ou sont
+  refusées. Une commande qui a pu partir sans réponse (délai dépassé une fois
+  envoyée, réponse incomprise) est annoncée « envoyée, sans confirmation » et
+  le canal est relu ; un refus de la box est annoncé « refusée » avec son code ;
+  une box injoignable avant l'envoi donne « non envoyée ».
+- Un « 429 » ou une erreur serveur de la box met tout en pause (1 minute à
+  6 heures), et la pause survit à un redémarrage. Après un échec, Gladys
+  n'interroge jamais la box plus souvent que l'intervalle de lecture.
+- Les scènes ne sont jamais réenregistrées, et rien ne modifie la configuration
+  de la box.
 
 ## Dépannage
 
-L'intégration journalise tout ce qu'elle fait : consultez les logs de
-l'intégration depuis l'interface Gladys (ou `docker logs` sur l'hôte) avec
-`LOG_LEVEL=debug` pour le détail complet.
+- **« Injoignable »** : vérifiez l'adresse IP (pas de nom en `.local`, le
+  conteneur ne les résout pas) et que la box est alimentée.
+- **« Ne répond pas comme une WMS WebControl pro »** : l'adresse répond, mais
+  pas avec l'API ; vérifiez l'adresse, et que la box a une version avec l'API.
+- **Badge orange** : survolez-le : une protection est active, le produit est
+  bloqué, hors de portée radio, ou une commande n'est pas encore confirmée.
+
+## Crédits
+
+Logique reprise de [pywmspro](https://github.com/mback2k/pywmspro) (Apache-2.0)
+et de l'intégration `wmspro` de Home Assistant (Apache-2.0), d'après la
+documentation de l'API publiée par WAREMA. WAREMA est une marque de WAREMA
+Renkhoff SE ; ce projet est sans lien avec WAREMA.

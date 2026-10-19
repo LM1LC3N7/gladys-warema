@@ -1,45 +1,97 @@
 // -----------------------------------------------------------------------------
-// Integration configuration.
-//
-// The configuration is filled in by the user in Gladys, from the `config_schema`
-// declared in `gladys-assistant-integration.json`. The SDK fetches it for you
-// (`gladys.getConfig()`) and notifies you of every change through
-// `gladys.onConfigUpdated()`.
-//
-// This module only provides defaults and normalizes the received object, so the
-// rest of the code never has to deal with `undefined`.
+// The configuration of the manifest `config_schema`, normalized.
 // -----------------------------------------------------------------------------
 
-// Defaults: they MUST stay consistent with the `default` values declared in the
-// `config_schema` of the manifest.
-export const DEFAULT_CONFIG = {
-  latitude: 48.8566, // Paris
-  longitude: 2.3522,
-  unit: 'celsius', // 'celsius' | 'fahrenheit'
-  // Seconds between two reads of the polled sensors. Gladys polls at most once
-  // a minute: slower intervals are applied by skipping polls (see
-  // createPoller in src/devices/index.js).
-  poll_frequency: 300,
-  // Reserved key (NOT in config_schema): because the manifest declares both
-  // 'local' and 'cloud' in its `transports` field, Gladys shows a standard
-  // "Prefer the local connection" toggle and sends the user's choice here.
-  // Read-only for the integration; defaults to true.
-  GLADYS_PREFER_LOCAL: true,
+import { LANGUAGES, POLL_INTERVAL } from './constants.js';
+
+/** Defaults, mirrored by the manifest (checked by test/manifest.test.js). */
+export const DEFAULTS = {
+  box_address: '',
+  poll_interval: POLL_INTERVAL.default,
+  language: 'fr',
+  publish_tilt: false,
+  allow_load_switches: false,
 };
 
 /**
- * Merge the user config with the defaults.
- * @param {Record<string, unknown>} raw config returned by the SDK
+ * The base address of the WebControl pro from what the user typed:
+ * "192.168.1.30", "webcontrol", "http://192.168.1.30/" or
+ * "http://192.168.1.30/commonCommand".
+ * @returns {{ url: string, host: string } | { error: 'empty'|'invalid'|'https'|'credentials'|'path'|'local-name' }}
+ */
+export function parseBoxAddress(raw) {
+  const text = String(raw ?? '').trim();
+  if (text === '') {
+    return { error: 'empty' };
+  }
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `http://${text}`;
+  let url;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    return { error: 'invalid' };
+  }
+  if (url.protocol === 'https:') {
+    // The API is served over plain HTTP on the local network only.
+    return { error: 'https' };
+  }
+  if (url.protocol !== 'http:' || !url.hostname) {
+    return { error: 'invalid' };
+  }
+  if (url.username || url.password) {
+    return { error: 'credentials' };
+  }
+  if (!/^\/(commonCommand\/?)?$/i.test(url.pathname) || url.search || url.hash) {
+    return { error: 'path' };
+  }
+  if (/\.local\.?$/i.test(url.hostname)) {
+    // mDNS names do not resolve in the container (bridge network).
+    return { error: 'local-name' };
+  }
+  return { url: url.origin, host: url.host };
+}
+
+const bounded = (raw, { min, max, default: fallback }) => {
+  const n = Number(raw);
+  return raw !== '' && raw !== null && Number.isFinite(n)
+    ? Math.max(min, Math.min(max, n))
+    : fallback;
+};
+
+export const bool = (raw, fallback) => {
+  if (typeof raw === 'boolean') {
+    return raw;
+  }
+  if (raw === 'true' || raw === 1 || raw === '1') {
+    return true;
+  }
+  if (raw === 'false' || raw === 0 || raw === '0') {
+    return false;
+  }
+  return fallback;
+};
+
+/**
+ * @returns {{ url?: string, host?: string, error?: string, pollInterval: number,
+ *   language: 'fr'|'en', publishTilt: boolean, allowLoads: boolean }}
  */
 export function normalizeConfig(raw = {}) {
+  const given = Object.fromEntries(
+    Object.entries(raw ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== ''),
+  );
+  const c = { ...DEFAULTS, ...given };
+  const target = parseBoxAddress(c.box_address);
   return {
-    ...DEFAULT_CONFIG,
-    ...raw,
-    // Force the types: config may arrive as strings from a form.
-    latitude: Number(raw.latitude ?? DEFAULT_CONFIG.latitude),
-    longitude: Number(raw.longitude ?? DEFAULT_CONFIG.longitude),
-    poll_frequency: Number(raw.poll_frequency ?? DEFAULT_CONFIG.poll_frequency),
-    // The preference is a boolean; anything but an explicit false means true.
-    GLADYS_PREFER_LOCAL: raw.GLADYS_PREFER_LOCAL !== false,
+    url: target.url,
+    host: target.host,
+    error: target.error,
+    pollInterval: Math.round(bounded(c.poll_interval, POLL_INTERVAL)),
+    language: LANGUAGES.includes(c.language) ? c.language : DEFAULTS.language,
+    // The slats of venetian blinds as their own device, off by default: a
+    // "close all blinds" of a voice assistant may target it too.
+    publishTilt: bool(c.publish_tilt, false),
+    // Switched loads (a patio heater is often wired to one): read-only unless
+    // allowed; read again at the moment the request leaves.
+    allowLoads: bool(c.allow_load_switches, false),
   };
 }
