@@ -35,7 +35,7 @@ test('the store basics', () => {
   assert.equal(manifest.type, 'device');
   assert.ok(manifest.name.length >= 3 && manifest.name.length <= 30);
   assert.match(manifest.gladys_version, />=5\.1\.0/);
-  assert.equal(manifest.version, '0.1.0');
+  assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
   assert.equal(manifest.docker_image, `ghcr.io/lm1lc3n7/gladys-warema:${manifest.version}`);
   const pkg = JSON.parse(read('package.json'));
   assert.equal(manifest.version, pkg.version);
