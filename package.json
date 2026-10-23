@@ -1,6 +1,6 @@
 {
   "name": "gladys-warema",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Gladys Assistant external integration for WAREMA blinds, shutters, awnings, lights and scenes, through the local API of the WMS WebControl pro. Unofficial, not affiliated with WAREMA.",
   "type": "module",
